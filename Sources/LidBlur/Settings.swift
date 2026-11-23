@@ -31,7 +31,7 @@ enum Intensity: String, CaseIterable {
 final class Settings {
     static let shared = Settings()
 
-    static let clearAngleChoices: [Double] = [60, 80, 100]
+    static let clearAngleRange: ClosedRange<Double> = 30...130
 
     private let defaults = UserDefaults.standard
 

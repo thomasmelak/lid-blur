@@ -65,14 +65,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(submenu("Intensity", intensityMenu))
 
-        let angleMenu = NSMenu()
-        for angle in Settings.clearAngleChoices {
-            let entry = item("\(Int(angle))°", #selector(chooseClearAngle(_:)), checked: settings.clearAngle == angle)
-            entry.representedObject = angle
-            entry.isEnabled = controller.hasSensor
-            angleMenu.addItem(entry)
+        if controller.hasSensor {
+            let sliderItem = NSMenuItem()
+            sliderItem.view = makeAngleSlider()
+            menu.addItem(sliderItem)
+            menu.addItem(item("Use Current Lid Angle", #selector(useCurrentAngle)))
         }
-        menu.addItem(submenu("Sharp From Lid Angle", angleMenu))
 
         menu.addItem(.separator())
         menu.addItem(item("Launch at Login", #selector(toggleLaunchAtLogin), checked: LoginItem.isEnabled))
@@ -104,6 +102,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             statusLine.title = "No lid angle sensor: using open/close events"
         }
+    }
+
+    private var angleLabel: NSTextField?
+
+    private static func angleLabelText(_ angle: Double) -> String {
+        "Fully sharp from \(Int(angle))°"
+    }
+
+    /// A label and a slider for the angle at which the screen becomes fully sharp.
+    private func makeAngleSlider() -> NSView {
+        let width: CGFloat = 250
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 48))
+
+        let label = NSTextField(labelWithString: AppDelegate.angleLabelText(settings.clearAngle))
+        label.font = NSFont.menuFont(ofSize: 0)
+        label.textColor = .labelColor
+        label.frame = NSRect(x: 20, y: 26, width: width - 34, height: 18)
+        container.addSubview(label)
+        angleLabel = label
+
+        let range = Settings.clearAngleRange
+        let slider = NSSlider(value: settings.clearAngle, minValue: range.lowerBound, maxValue: range.upperBound,
+                              target: self, action: #selector(angleSliderMoved(_:)))
+        slider.isContinuous = true
+        slider.controlSize = .small
+        slider.frame = NSRect(x: 18, y: 4, width: width - 32, height: 20)
+        container.addSubview(slider)
+
+        return container
     }
 
     private func item(_ title: String, _ action: Selector, checked: Bool = false, enabled: Bool = true) -> NSMenuItem {
@@ -143,9 +170,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller.preview()
     }
 
-    @objc private func chooseClearAngle(_ sender: NSMenuItem) {
-        guard let angle = sender.representedObject as? Double else { return }
+    @objc private func angleSliderMoved(_ sender: NSSlider) {
+        let angle = sender.doubleValue.rounded()
         settings.clearAngle = angle
+        angleLabel?.stringValue = AppDelegate.angleLabelText(angle)
+        controller.settingsChanged()
+    }
+
+    @objc private func useCurrentAngle() {
+        guard let angle = controller.currentAngle else { return }
+        settings.clearAngle = min(max(angle.rounded(), Settings.clearAngleRange.lowerBound),
+                                  Settings.clearAngleRange.upperBound)
         controller.settingsChanged()
     }
 
