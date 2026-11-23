@@ -6,7 +6,7 @@ enum BlurStyle: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .unfold: return "Unfold (clears from the centre)"
+        case .unfold: return "Unfold (clears from the bottom)"
         case .uniform: return "Uniform"
         }
     }

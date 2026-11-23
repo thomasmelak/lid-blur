@@ -42,11 +42,11 @@ final class BlurCurveTests: XCTestCase {
 
     func testUnfoldMask() {
         XCTAssertTrue(UnfoldMask(strength: 1).isFullyBlurred)
-        XCTAssertEqual(UnfoldMask(strength: 1).centreCoverage, 1)
+        XCTAssertEqual(UnfoldMask(strength: 1).bottomCoverage, 1)
         XCTAssertTrue(UnfoldMask(strength: 0).isFullyClear)
         let half = UnfoldMask(strength: 0.5)
-        XCTAssertGreaterThan(half.clearRadius, 0)
-        XCTAssertLessThan(half.blurRadius, 1)
-        XCTAssertEqual(half.blurRadius - half.clearRadius, UnfoldMask.feather, accuracy: 1e-9)
+        XCTAssertGreaterThan(half.clearEdge, 0)
+        XCTAssertLessThan(half.blurEdge, 1)
+        XCTAssertEqual(half.blurEdge - half.clearEdge, UnfoldMask.feather, accuracy: 1e-9)
     }
 }

@@ -49,15 +49,16 @@ public enum Easing {
     }
 }
 
-/// Describes the radial "unfold" reveal: the sharp area grows from the centre of the screen
-/// outwards as the blur strength falls.
+/// Describes the "unfold" reveal: the sharp area rises from the bottom edge of the screen
+/// (the hinge) towards the top as the blur strength falls. Positions are fractions of the
+/// screen height measured from the bottom.
 public struct UnfoldMask: Equatable, Sendable {
-    /// Fraction of the radius (0...1) that is completely sharp.
-    public let clearRadius: Double
-    /// Fraction of the radius where the blur is back to full strength.
-    public let blurRadius: Double
-    /// Blur coverage at the very centre (0 = sharp, 1 = blurred).
-    public let centreCoverage: Double
+    /// Height fraction (0...1), from the bottom, that is completely sharp.
+    public let clearEdge: Double
+    /// Height fraction where the blur is back to full strength.
+    public let blurEdge: Double
+    /// Blur coverage at the very bottom edge (0 = sharp, 1 = blurred).
+    public let bottomCoverage: Double
 
     public static let feather = 0.35
 
@@ -65,11 +66,11 @@ public struct UnfoldMask: Equatable, Sendable {
         let progress = 1 - Easing.clamp(strength)
         let inner = progress * (1 + UnfoldMask.feather) - UnfoldMask.feather
         let outer = inner + UnfoldMask.feather
-        clearRadius = Easing.clamp(inner)
-        blurRadius = Easing.clamp(outer)
-        centreCoverage = inner >= 0 ? 0 : Easing.clamp(-inner / UnfoldMask.feather)
+        clearEdge = Easing.clamp(inner)
+        blurEdge = Easing.clamp(outer)
+        bottomCoverage = inner >= 0 ? 0 : Easing.clamp(-inner / UnfoldMask.feather)
     }
 
-    public var isFullyBlurred: Bool { blurRadius <= 0 }
-    public var isFullyClear: Bool { clearRadius >= 1 }
+    public var isFullyBlurred: Bool { blurEdge <= 0 }
+    public var isFullyClear: Bool { clearEdge >= 1 }
 }

@@ -5,7 +5,7 @@ inspired by the soft unfold animation of foldable phones.
 
 - **Follows the hinge.** On MacBooks with a lid angle sensor, the blur strength tracks the
   angle of the lid in real time: close the lid and the screen melts into a blur, open it and
-  the picture sharpens from the centre outwards.
+  the picture sharpens from the hinge upwards.
 - **Works everywhere else too.** Without the sensor, Lid Blur falls back to lid open/close and
   wake events and plays the unfold animation each time the screen comes back.
 - **Stays out of the way.** The overlay is click-through, only covers the built-in display,
@@ -46,7 +46,7 @@ Lid Blur lives in the menu bar (the laptop icon). From there you can:
 | --- | --- |
 | Enabled | Turns the effect on or off |
 | Preview Animation | Plays the blur so you can try settings without moving the lid |
-| Style | **Unfold** clears from the centre outwards, **Uniform** fades evenly |
+| Style | **Unfold** clears from the bottom up, **Uniform** fades evenly |
 | Intensity | Subtle, Normal or Strong |
 | Sharp From Lid Angle | The lid angle at which the screen is fully sharp (sensor Macs only) |
 | Launch at Login | Starts Lid Blur when you log in (on by default) |
@@ -65,7 +65,7 @@ replaces blurs with a solid tint, so the effect becomes a fade.
 - The hinge angle is read from Apple's HID sensor device (usage page `0x20`, usage `0x8A`,
   feature report 1). No special permissions are needed.
 - The blur is a borderless, click-through `NSVisualEffectView` window above everything on
-  the built-in display. Its opacity, and for the Unfold style a radial mask, are driven by the
+  the built-in display. Its opacity, and for the Unfold style a bottom-to-top gradient mask, are driven by the
   lid angle through a smoothstep curve with light smoothing.
 - Without the sensor, the app listens for sleep/wake notifications and polls
   `AppleClamshellState`.

@@ -117,10 +117,11 @@ final class BlurOverlay: NSObject {
         return window
     }
 
-    /// A small radial gradient image, stretched over the screen, used as the blur mask.
-    /// Opaque areas are blurred, transparent areas are sharp.
+    /// A small vertical gradient image, stretched over the screen, used as the blur mask.
+    /// Opaque areas are blurred, transparent areas are sharp. The sharp part starts at the
+    /// bottom edge (the hinge) and rises as the lid opens.
     private static func unfoldMask(_ mask: UnfoldMask) -> NSImage {
-        let size = NSSize(width: 96, height: 96)
+        let size = NSSize(width: 8, height: 128)
         let image = NSImage(size: size, flipped: false) { rect in
             if mask.isFullyBlurred {
                 NSColor.black.setFill()
@@ -131,25 +132,24 @@ final class BlurOverlay: NSObject {
 
             var colors: [NSColor] = []
             var locations: [CGFloat] = []
-            if mask.centreCoverage > 0 {
-                colors.append(NSColor.black.withAlphaComponent(CGFloat(mask.centreCoverage)))
+            if mask.bottomCoverage > 0 {
+                colors.append(NSColor.black.withAlphaComponent(CGFloat(mask.bottomCoverage)))
                 locations.append(0)
             } else {
                 colors.append(.clear)
-                locations.append(CGFloat(mask.clearRadius))
+                locations.append(CGFloat(mask.clearEdge))
             }
             colors.append(.black)
-            locations.append(max(CGFloat(mask.blurRadius), locations[0] + 0.001))
+            locations.append(max(CGFloat(mask.blurEdge), locations[0] + 0.001))
 
             guard let gradient = NSGradient(colors: colors, atLocations: &locations, colorSpace: .deviceRGB) else {
                 return false
             }
-            let centre = NSPoint(x: rect.midX, y: rect.midY)
-            let radius = hypot(rect.width, rect.height) / 2
             NSColor.clear.setFill()
             rect.fill()
-            gradient.draw(fromCenter: centre, radius: 0, toCenter: centre, radius: radius,
-                          options: [.drawsBeforeStartingLocation, .drawsAfterEndingLocation])
+            // Angle 90 runs from the bottom of the rect (location 0) to the top (location 1).
+            // NSGradient extends its end colours past the first and last locations.
+            gradient.draw(in: rect, angle: 90)
             return true
         }
         image.resizingMode = .stretch
