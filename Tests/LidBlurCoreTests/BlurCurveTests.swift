@@ -1,0 +1,52 @@
+import XCTest
+@testable import LidBlurCore
+
+final class BlurCurveTests: XCTestCase {
+    func testEndpoints() {
+        let curve = BlurCurve(closedAngle: 10, clearAngle: 70)
+        XCTAssertEqual(curve.strength(forAngle: 0), 1)
+        XCTAssertEqual(curve.strength(forAngle: 10), 1)
+        XCTAssertEqual(curve.strength(forAngle: 70), 0)
+        XCTAssertEqual(curve.strength(forAngle: 120), 0)
+        XCTAssertEqual(curve.strength(forAngle: 40), 0.5, accuracy: 1e-9)
+    }
+
+    func testMonotonicallyDecreasing() {
+        let curve = BlurCurve()
+        var previous = 2.0
+        for angle in stride(from: 0.0, through: 180.0, by: 1.0) {
+            let s = curve.strength(forAngle: angle)
+            XCTAssertLessThanOrEqual(s, previous)
+            previous = s
+        }
+    }
+
+    func testDegenerateCurve() {
+        let curve = BlurCurve(closedAngle: 50, clearAngle: 50)
+        XCTAssertEqual(curve.strength(forAngle: 49), 1)
+        XCTAssertEqual(curve.strength(forAngle: 51), 0)
+    }
+
+    func testApproachConverges() {
+        var value = 1.0
+        for _ in 0..<120 { value = Easing.approach(value, 0, dt: 1.0 / 60, timeConstant: 0.07) }
+        XCTAssertEqual(value, 0)
+    }
+
+    func testEasings() {
+        for f in [Easing.easeOutCubic, Easing.easeInOutCubic, Easing.smoothstep] {
+            XCTAssertEqual(f(0), 0, accuracy: 1e-9)
+            XCTAssertEqual(f(1), 1, accuracy: 1e-9)
+        }
+    }
+
+    func testUnfoldMask() {
+        XCTAssertTrue(UnfoldMask(strength: 1).isFullyBlurred)
+        XCTAssertEqual(UnfoldMask(strength: 1).centreCoverage, 1)
+        XCTAssertTrue(UnfoldMask(strength: 0).isFullyClear)
+        let half = UnfoldMask(strength: 0.5)
+        XCTAssertGreaterThan(half.clearRadius, 0)
+        XCTAssertLessThan(half.blurRadius, 1)
+        XCTAssertEqual(half.blurRadius - half.clearRadius, UnfoldMask.feather, accuracy: 1e-9)
+    }
+}
