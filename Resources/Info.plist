@@ -8,6 +8,8 @@
     <string>Lid Blur</string>
     <key>CFBundleExecutable</key>
     <string>LidBlur</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.thomasmelak.LidBlur</string>
     <key>CFBundleInfoDictionaryVersion</key>
