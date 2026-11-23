@@ -75,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(item("Launch at Login", #selector(toggleLaunchAtLogin), checked: LoginItem.isEnabled))
         menu.addItem(.separator())
+        menu.addItem(item("Uninstall Lid Blur…", #selector(uninstall)))
         let quit = item("Quit Lid Blur", #selector(quit))
         quit.keyEquivalent = "q"
         menu.addItem(quit)
@@ -191,6 +192,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let alert = NSAlert(error: error)
             alert.runModal()
         }
+    }
+
+    @objc private func uninstall() {
+        Uninstaller.confirmAndUninstall()
     }
 
     @objc private func quit() {

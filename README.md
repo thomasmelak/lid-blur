@@ -14,12 +14,22 @@ inspired by the soft unfold animation of foldable phones.
 
 ## Install
 
+**Download**
+
+Grab [LidBlur.dmg](https://github.com/thomasmelak/lid-blur/releases/latest/download/LidBlur.dmg),
+open it and drag **Lid Blur** onto **Applications**. The app isn't notarized by Apple, so the
+first time you open it macOS will refuse; go to System Settings > Privacy & Security and click
+**Open Anyway** (or run `xattr -dr com.apple.quarantine "/Applications/Lid Blur.app"`).
+
 **Homebrew**
 
 ```sh
 brew tap thomasmelak/lid-blur https://github.com/thomasmelak/lid-blur
 brew install --cask lid-blur
 ```
+
+Homebrew clears the quarantine flag for you, so the app opens straight away. Update with
+`brew upgrade --cask --greedy lid-blur`.
 
 **One-line installer**
 
@@ -77,13 +87,16 @@ replaces blurs with a solid tint, so the effect becomes a fade.
 
 ## Uninstall
 
-```sh
-brew uninstall --cask lid-blur
-# or
-curl -fsSL https://raw.githubusercontent.com/thomasmelak/lid-blur/main/uninstall.sh | bash
-```
+Any of these removes the app, its login item and its settings:
+
+- From the menu bar icon: **Uninstall Lid Blur…**
+- Homebrew: `brew uninstall --cask --zap lid-blur`
+- Script: `curl -fsSL https://raw.githubusercontent.com/thomasmelak/lid-blur/main/uninstall.sh | bash`
+  (or `make uninstall` in a clone)
 
 ## Releasing
 
-Push a tag like `v0.1.0`. The release workflow builds a universal, ad-hoc signed app and
-attaches `LidBlur.zip` to a GitHub release, which both the cask and the installer download.
+Push a tag like `v0.1.0`, or run the **Release** workflow from the Actions tab with a tag name.
+It runs the tests, builds a universal, ad-hoc signed app, and publishes `LidBlur.zip` and
+`LidBlur.dmg` to a GitHub release. The Homebrew cask, the one-line installer and the download
+link above always point at the latest release, so nothing else needs updating.

@@ -1,4 +1,4 @@
-.PHONY: build app test run install clean
+.PHONY: build app dmg test run install uninstall clean
 
 build:
 	swift build
@@ -9,6 +9,9 @@ test:
 app:
 	scripts/build-app.sh
 
+dmg: app
+	scripts/build-dmg.sh
+
 run: app
 	open "build/Lid Blur.app"
 
@@ -17,6 +20,9 @@ install: app
 	rm -rf "/Applications/Lid Blur.app"
 	ditto "build/Lid Blur.app" "/Applications/Lid Blur.app"
 	open "/Applications/Lid Blur.app"
+
+uninstall:
+	./uninstall.sh
 
 clean:
 	rm -rf .build build

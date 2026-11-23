@@ -17,6 +17,11 @@ cask "lid-blur" do
     system_command "/usr/bin/open", args: ["#{appdir}/Lid Blur.app"]
   end
 
+  caveats <<~EOS
+    Lid Blur lives in the menu bar (the laptop icon) and starts at login.
+    Turn either off from its menu.
+  EOS
+
   uninstall quit:      "com.thomasmelak.LidBlur",
             launchctl: "com.thomasmelak.lidblur"
 
