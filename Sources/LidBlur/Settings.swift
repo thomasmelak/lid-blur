@@ -31,7 +31,7 @@ enum Intensity: String, CaseIterable {
 final class Settings {
     static let shared = Settings()
 
-    static let clearAngleChoices: [Double] = [50, 70, 90, 110]
+    static let clearAngleChoices: [Double] = [60, 80, 100]
 
     private let defaults = UserDefaults.standard
 
@@ -52,7 +52,7 @@ final class Settings {
 
     /// Lid angle (degrees) at which the screen becomes completely sharp.
     var clearAngle: Double {
-        get { defaults.object(forKey: "clearAngle") as? Double ?? 70 }
+        get { defaults.object(forKey: "clearAngle") as? Double ?? 80 }
         set { defaults.set(newValue, forKey: "clearAngle") }
     }
 

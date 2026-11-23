@@ -49,4 +49,20 @@ final class BlurCurveTests: XCTestCase {
         XCTAssertLessThan(half.blurEdge, 1)
         XCTAssertEqual(half.blurEdge - half.clearEdge, UnfoldMask.feather, accuracy: 1e-9)
     }
+
+    func testFoldLook() {
+        XCTAssertEqual(FoldLook(fold: 0), FoldLook(fold: -1))
+        XCTAssertEqual(FoldLook(fold: 0).blur, 0)
+        XCTAssertEqual(FoldLook(fold: 0).dim, 0)
+        XCTAssertEqual(FoldLook(fold: 1).blur, 1)
+        XCTAssertEqual(FoldLook(fold: 1).dim, 1)
+        // Blur leads, darkness follows.
+        let early = FoldLook(fold: 0.3)
+        XCTAssertGreaterThan(early.blur, 0.9)
+        XCTAssertEqual(early.dim, 0)
+        let late = FoldLook(fold: 0.8)
+        XCTAssertEqual(late.blur, 1)
+        XCTAssertGreaterThan(late.dim, 0.5)
+        XCTAssertLessThan(late.dim, 1)
+    }
 }

@@ -66,7 +66,9 @@ replaces blurs with a solid tint, so the effect becomes a fade.
   feature report 1). No special permissions are needed.
 - The blur is a borderless, click-through `NSVisualEffectView` window above everything on
   the built-in display. Its opacity, and for the Unfold style a bottom-to-top gradient mask, are driven by the
-  lid angle through a smoothstep curve with light smoothing.
+  lid angle through a smoothstep curve with light smoothing. Like a folding phone, the blur
+  comes in as soon as the lid starts to close, and the screen darkens to almost black only
+  as it nears closed.
 - Without the sensor, the app listens for sleep/wake notifications and polls
   `AppleClamshellState`.
 - Launch at login is a LaunchAgent in `~/Library/LaunchAgents/com.thomasmelak.lidblur.plist`.

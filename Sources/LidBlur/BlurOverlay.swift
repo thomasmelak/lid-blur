@@ -9,8 +9,8 @@ final class BlurOverlay: NSObject {
     private var tintView: NSView?
     private var lastMaskKey = -1
 
-    /// How dark the screen gets at full strength, on top of the blur.
-    private let maxTint = 0.3
+    /// How dark the screen gets when the lid is closed, on top of the blur.
+    private let maxTint = 0.9
 
     override init() {
         super.init()
@@ -19,8 +19,10 @@ final class BlurOverlay: NSObject {
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
 
+    /// `strength` is the fold amount: 0 with the lid open, 1 with it closed.
     func apply(strength: Double, style: BlurStyle, maxOpacity: Double) {
-        let s = Easing.clamp(strength)
+        let look = FoldLook(fold: strength)
+        let s = look.blur
         guard s > 0.002 else {
             hide()
             return
@@ -41,7 +43,7 @@ final class BlurOverlay: NSObject {
                 effectView.maskImage = BlurOverlay.unfoldMask(UnfoldMask(strength: s))
             }
         }
-        tintView.alphaValue = CGFloat(s * maxTint)
+        tintView.alphaValue = CGFloat(look.dim * maxTint)
 
         if !window.isVisible { window.orderFrontRegardless() }
     }

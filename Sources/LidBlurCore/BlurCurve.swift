@@ -7,7 +7,7 @@ public struct BlurCurve: Equatable, Sendable {
     /// At or above this angle the screen is completely sharp.
     public var clearAngle: Double
 
-    public init(closedAngle: Double = 10, clearAngle: Double = 70) {
+    public init(closedAngle: Double = 10, clearAngle: Double = 80) {
         self.closedAngle = closedAngle
         self.clearAngle = clearAngle
     }
@@ -46,6 +46,22 @@ public enum Easing {
         let k = 1 - exp(-dt / timeConstant)
         let next = current + (target - current) * k
         return abs(next - target) < 0.001 ? target : next
+    }
+}
+
+/// How the screen looks for a given fold amount (0 = flat open, 1 = closed), tuned to the
+/// foldable-phone animation: the blur comes in quickly as soon as the panel starts to fold,
+/// while the screen only darkens in the second half, fading to almost black when closed.
+public struct FoldLook: Equatable, Sendable {
+    /// Blur coverage, 0...1.
+    public let blur: Double
+    /// Darkening, 0...1 (scaled by the overlay's maximum dim).
+    public let dim: Double
+
+    public init(fold: Double) {
+        let f = Easing.clamp(fold)
+        blur = Easing.easeOutCubic(f / 0.4)
+        dim = Easing.smoothstep((f - 0.3) / 0.7)
     }
 }
 

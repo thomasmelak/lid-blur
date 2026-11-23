@@ -76,9 +76,9 @@ final class LidBlurController: NSObject {
     func preview() {
         guard settings.enabled else { return }
         queue = [
-            Segment(to: 1, duration: 0.45, easing: Easing.easeInOutCubic),
-            Segment(to: 1, duration: 0.35, easing: Easing.smoothstep),
-            Segment(to: nil, duration: 1.0, easing: Easing.easeOutCubic),
+            Segment(to: 1, duration: 0.5, easing: Easing.easeInOutCubic),
+            Segment(to: 1, duration: 0.3, easing: Easing.smoothstep),
+            Segment(to: nil, duration: 0.6, easing: Easing.easeOutCubic),
         ]
         running = nil
         schedule(interval: 1.0 / 60)
@@ -104,7 +104,7 @@ final class LidBlurController: NSObject {
     private func unfold() {
         if let running, running.segment.to == nil { return }
         current = max(current, 1)
-        queue = [Segment(to: nil, duration: 0.9, easing: Easing.easeOutCubic)]
+        queue = [Segment(to: nil, duration: 0.6, easing: Easing.easeOutCubic)]
         running = nil
         schedule(interval: 1.0 / 60)
     }
