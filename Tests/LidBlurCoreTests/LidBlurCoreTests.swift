@@ -2,33 +2,61 @@ import XCTest
 @testable import LidBlurCore
 
 final class LidBlurCoreTests: XCTestCase {
-    func testTriggerFirstReading() {
-        var open = LidTrigger(openAngle: 40)
-        XCTAssertEqual(open.update(angle: 110), true)
-        var closed = LidTrigger(openAngle: 40)
-        XCTAssertEqual(closed.update(angle: 5), false)
+    func testCurveEndpoints() {
+        let curve = BlurCurve(closedAngle: 10, clearAngle: 70)
+        XCTAssertEqual(curve.strength(forAngle: 0), 1)
+        XCTAssertEqual(curve.strength(forAngle: 10), 1)
+        XCTAssertEqual(curve.strength(forAngle: 70), 0)
+        XCTAssertEqual(curve.strength(forAngle: 120), 0)
+        XCTAssertEqual(curve.strength(forAngle: 40), 0.5, accuracy: 1e-9)
     }
 
-    func testTriggerFiresOncePerTransition() {
-        var trigger = LidTrigger(openAngle: 40, hysteresis: 10)
-        XCTAssertEqual(trigger.update(angle: 0), false)
-        XCTAssertNil(trigger.update(angle: 20))
-        XCTAssertNil(trigger.update(angle: 39))
-        XCTAssertEqual(trigger.update(angle: 40), true)
-        XCTAssertNil(trigger.update(angle: 120))
-        // Inside the hysteresis band: still open.
-        XCTAssertNil(trigger.update(angle: 35))
-        XCTAssertEqual(trigger.update(angle: 30), false)
-        XCTAssertNil(trigger.update(angle: 35))
-        XCTAssertEqual(trigger.update(angle: 45), true)
+    func testCurveMonotonicallyDecreasing() {
+        let curve = BlurCurve()
+        var previous = 2.0
+        for angle in stride(from: 0.0, through: 180.0, by: 1.0) {
+            let s = curve.strength(forAngle: angle)
+            XCTAssertLessThanOrEqual(s, previous)
+            previous = s
+        }
     }
 
-    func testTriggerReset() {
-        var trigger = LidTrigger()
-        _ = trigger.update(angle: 100)
-        trigger.reset()
-        XCTAssertNil(trigger.isOpen)
-        XCTAssertEqual(trigger.update(angle: 100), true)
+    func testFollowerEasesInsteadOfSnapping() {
+        // Lid flung open: target drops from 1 to 0 instantly.
+        var follower = EasedFollower(value: 1)
+        follower.step(towards: 0, dt: 1.0 / 60)
+        XCTAssertGreaterThan(follower.value, 0.99, "starts gently")
+        var previous = follower.value
+        var time = 1.0 / 60
+        while follower.value > 0, time < 3 {
+            follower.step(towards: 0, dt: 1.0 / 60)
+            XCTAssertLessThanOrEqual(follower.value, previous, "never overshoots back")
+            XCTAssertGreaterThanOrEqual(follower.value, 0, "never overshoots past")
+            previous = follower.value
+            time += 1.0 / 60
+        }
+        XCTAssertEqual(follower.value, 0)
+        XCTAssertTrue(follower.isSettled)
+        XCTAssertGreaterThan(time, 0.6)
+        XCTAssertLessThan(time, 1.3)
+    }
+
+    func testFollowerTracksSlowMovement() {
+        var follower = EasedFollower(value: 1)
+        var target = 1.0
+        for _ in 0..<180 { // 3 s slow open
+            target = max(0, target - 1.0 / 180)
+            follower.step(towards: target, dt: 1.0 / 60)
+            XCTAssertLessThan(abs(follower.value - target), 0.1)
+        }
+    }
+
+    func testFollowerStepSizeIndependent() {
+        var coarse = EasedFollower(value: 1)
+        var fine = EasedFollower(value: 1)
+        coarse.step(towards: 0, dt: 0.2)
+        for _ in 0..<20 { fine.step(towards: 0, dt: 0.01) }
+        XCTAssertEqual(coarse.value, fine.value, accuracy: 1e-9)
     }
 
     func testApproachConverges() {

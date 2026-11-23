@@ -1,35 +1,59 @@
 import Foundation
 
-/// Turns the lid angle into open/closed events. The angle only triggers the animation; the
-/// animation itself runs on its own easing curve, so opening the lid quickly still eases into
-/// sharpness. A little hysteresis stops the state flickering when the lid rests near the edge.
-public struct LidTrigger: Equatable, Sendable {
-    /// The lid counts as open once it rises to this angle.
-    public var openAngle: Double
-    /// The lid counts as closed again once it falls this many degrees below `openAngle`.
-    public var hysteresis: Double
-    public private(set) var isOpen: Bool?
+/// Maps a lid angle (degrees) to a fold amount between 0 (open, sharp) and 1 (closed, blurred).
+public struct BlurCurve: Equatable, Sendable {
+    /// At or below this angle the screen is fully blurred.
+    public var closedAngle: Double
+    /// At or above this angle the screen is completely sharp.
+    public var clearAngle: Double
 
-    public init(openAngle: Double = 40, hysteresis: Double = 10) {
-        self.openAngle = openAngle
-        self.hysteresis = hysteresis
+    public init(closedAngle: Double = 10, clearAngle: Double = 80) {
+        self.closedAngle = closedAngle
+        self.clearAngle = clearAngle
     }
 
-    /// Feeds a new angle reading. Returns the new state when it changed, else nil.
-    public mutating func update(angle: Double) -> Bool? {
-        let open: Bool
-        if isOpen == true {
-            open = angle > openAngle - hysteresis
-        } else {
-            open = angle >= openAngle
+    public func strength(forAngle angle: Double) -> Double {
+        guard clearAngle > closedAngle else { return angle <= closedAngle ? 1 : 0 }
+        let t = Easing.clamp((angle - closedAngle) / (clearAngle - closedAngle))
+        return 1 - Easing.smoothstep(t)
+    }
+}
+
+/// A critically damped spring that follows a moving target. It eases in and out of every
+/// change, keeps its velocity when the target moves again, and never overshoots. A slow lid
+/// is tracked closely; a lid flung open still glides into sharpness instead of snapping.
+public struct EasedFollower: Equatable, Sendable {
+    public private(set) var value: Double
+    public private(set) var velocity: Double = 0
+    /// Stiffness in 1/s. Settles within ~1% after about 6.6 / omega seconds.
+    public var omega: Double
+
+    public init(value: Double = 0, omega: Double = 7.5) {
+        self.value = value
+        self.omega = omega
+    }
+
+    public var isSettled: Bool { velocity == 0 }
+
+    public mutating func jump(to value: Double) {
+        self.value = value
+        velocity = 0
+    }
+
+    /// Advances by `dt` seconds towards `target` (exact solution, stable for any step size).
+    public mutating func step(towards target: Double, dt: Double) {
+        guard dt > 0 else { return }
+        let x0 = value - target
+        let v0 = velocity
+        let e = exp(-omega * dt)
+        let x = (x0 + (v0 + omega * x0) * dt) * e
+        let v = (v0 - omega * (v0 + omega * x0) * dt) * e
+        value = target + x
+        velocity = v
+        if abs(x) < 0.002, abs(v) < 0.02 {
+            value = target
+            velocity = 0
         }
-        let changed = open != isOpen
-        isOpen = open
-        return changed ? open : nil
-    }
-
-    public mutating func reset() {
-        isOpen = nil
     }
 }
 

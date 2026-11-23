@@ -2,44 +2,26 @@ import AppKit
 import LidBlurCore
 import QuartzCore
 
-/// Drives the overlay. The lid angle (or a lid/wake event on Macs without the sensor) is only a
-/// trigger: crossing the open angle starts a timed, eased animation to sharp, and closing starts
-/// one back to blurred. So however fast the lid moves, the screen always eases into sharpness.
+/// Drives the overlay. The blur is tied to the lid angle, but the screen follows that angle
+/// through an eased, critically damped spring rather than snapping to it: a slow lid is tracked
+/// closely, and a lid opened quickly still glides into sharpness.
 @MainActor
 final class LidBlurController: NSObject {
-    private struct Segment {
-        /// Target fold amount, or nil to animate towards the lid's current state.
-        let to: Double?
-        let duration: Double
-        let easing: (Double) -> Double
-    }
-
-    private struct RunningSegment {
-        let segment: Segment
-        let from: Double
-        let start: CFTimeInterval
-    }
-
-    /// Lid opened: ease out of the blur, quickly at first, settling gently into sharpness.
-    static let clearDuration = 0.9
-    /// Lid closing: ease into the blur.
-    static let blurDuration = 0.45
-
     private let settings = Settings.shared
     private let overlay = BlurOverlay()
     private var sensor: LidAngleSensor?
-    private var trigger = LidTrigger()
+    private var curve = BlurCurve()
+    private var follower = EasedFollower(value: 0)
 
     private(set) var currentAngle: Double?
-    /// Where the animation is heading: 0 = open and sharp, 1 = closed and blurred.
+    /// Fold amount the lid asks for: 0 = open and sharp, 1 = closed and blurred.
     private var target = 0.0
-    /// Current fold amount shown on screen.
-    private var current = 0.0
-    private var queue: [Segment] = []
-    private var running: RunningSegment?
+    /// While set (preview), overrides the lid until this time.
+    private var holdBlurredUntil: CFTimeInterval?
 
     private var timer: Timer?
     private var timerInterval: TimeInterval = 0
+    private var lastTick = CACurrentMediaTime()
     private var lastAngleChange = -Double.infinity
     private var readFailures = 0
     private var lidClosed: Bool?
@@ -65,89 +47,54 @@ final class LidBlurController: NSObject {
     }
 
     func settingsChanged() {
-        trigger.openAngle = settings.clearAngle
-        trigger.reset()
+        curve = BlurCurve(closedAngle: 10, clearAngle: settings.clearAngle)
         if settings.enabled {
-            schedule(interval: 1.0 / 60)
+            wake()
         } else {
             timer?.invalidate()
             timer = nil
             timerInterval = 0
-            queue.removeAll()
-            running = nil
-            current = 0
-            target = 0
+            holdBlurredUntil = nil
+            follower.jump(to: 0)
             overlay.hide()
         }
     }
 
-    /// Blur in, hold, then ease back out, so the effect can be tried without moving the lid.
+    /// Blur in, hold, then ease back to whatever the lid says.
     func preview() {
         guard settings.enabled else { return }
-        queue = [
-            Segment(to: 1, duration: LidBlurController.blurDuration, easing: Easing.easeInOutCubic),
-            Segment(to: 1, duration: 0.3, easing: Easing.smoothstep),
-            Segment(to: nil, duration: LidBlurController.clearDuration, easing: Easing.easeOutCubic),
-        ]
-        running = nil
-        schedule(interval: 1.0 / 60)
+        holdBlurredUntil = CACurrentMediaTime() + 0.9
+        wake()
     }
 
-    // MARK: - Triggers
-
-    private func lidOpened() {
-        target = 0
-        animate(to: 0, duration: LidBlurController.clearDuration, easing: Easing.easeOutCubic)
-    }
-
-    private func lidClosing() {
-        target = 1
-        animate(to: 1, duration: LidBlurController.blurDuration, easing: Easing.easeInOutCubic)
-    }
-
-    /// Starts from wherever the screen is now. The duration shrinks with the distance left,
-    /// so reversing halfway keeps the same pace instead of crawling.
-    private func animate(to value: Double, duration: Double, easing: @escaping (Double) -> Double) {
-        let distance = abs(value - current)
-        guard distance > 0.001 else {
-            queue.removeAll()
-            running = nil
-            current = value
-            return
-        }
-        queue = [Segment(to: value, duration: duration * max(distance, 0.35), easing: easing)]
-        running = nil
-        schedule(interval: 1.0 / 60)
-    }
+    // MARK: - Sleep and wake
 
     @objc private func goingDark() {
         guard settings.enabled else { return }
-        // Cover the screen before it lights up again, so the first frame after waking is blurred.
-        queue.removeAll()
-        running = nil
-        current = 1
+        // Cover the screen before it lights up again, so waking eases in from blurred.
+        follower.jump(to: 1)
         target = 1
-        trigger.reset()
         render()
     }
 
     @objc private func wokeUp() {
         guard settings.enabled else { return }
         if sensor == nil || sensor?.readAngle() == nil { sensor = LidAngleSensor() }
-        if sensor == nil {
-            // No angle to wait for: waking up is the trigger.
-            lidOpened()
-        } else {
-            // The next reading decides: open past the trigger angle clears, otherwise stays blurred.
-            trigger.reset()
-            schedule(interval: 1.0 / 60)
-        }
+        if sensor == nil { target = 0 }
+        wake()
     }
 
     // MARK: - Frame loop
 
+    private func wake() {
+        lastTick = CACurrentMediaTime()
+        schedule(interval: 1.0 / 60)
+    }
+
     @objc private func tick() {
         let now = CACurrentMediaTime()
+        let dt = min(0.1, now - lastTick)
+        lastTick = now
 
         if sensor != nil {
             readSensor(now: now)
@@ -155,21 +102,17 @@ final class LidBlurController: NSObject {
             pollClamshell(now: now)
         }
 
-        if running == nil, !queue.isEmpty {
-            running = RunningSegment(segment: queue.removeFirst(), from: current, start: now)
+        var goal = target
+        if let until = holdBlurredUntil {
+            if now < until { goal = 1 } else { holdBlurredUntil = nil }
         }
-        if let run = running {
-            let t = Easing.clamp((now - run.start) / max(run.segment.duration, 0.001))
-            let end = run.segment.to ?? target
-            current = run.from + (end - run.from) * run.segment.easing(t)
-            if t >= 1 { running = nil }
-        }
+        follower.step(towards: goal, dt: dt)
 
         render()
 
-        let animating = running != nil || !queue.isEmpty
+        let settled = follower.value == goal && follower.velocity == 0
         let lidMoving = now - lastAngleChange < 1.5
-        if animating || lidMoving {
+        if !settled || lidMoving || holdBlurredUntil != nil {
             schedule(interval: 1.0 / 60)
         } else {
             schedule(interval: sensor != nil ? 1.0 / 10 : 1.0 / 2)
@@ -177,7 +120,7 @@ final class LidBlurController: NSObject {
     }
 
     private func render() {
-        overlay.apply(strength: current, style: settings.style, maxOpacity: settings.intensity.maxOpacity)
+        overlay.apply(strength: follower.value, style: settings.style, maxOpacity: settings.intensity.maxOpacity)
     }
 
     private func readSensor(now: CFTimeInterval) {
@@ -195,12 +138,7 @@ final class LidBlurController: NSObject {
         readFailures = 0
         if currentAngle.map({ abs($0 - angle) >= 1 }) ?? true { lastAngleChange = now }
         currentAngle = angle
-
-        switch trigger.update(angle: angle) {
-        case true?: lidOpened()
-        case false?: lidClosing()
-        case nil: break
-        }
+        target = curve.strength(forAngle: angle)
     }
 
     private func pollClamshell(now: CFTimeInterval) {
@@ -209,7 +147,12 @@ final class LidBlurController: NSObject {
         let closed = Clamshell.isClosed()
         defer { lidClosed = closed }
         guard let closed, let wasClosed = lidClosed, closed != wasClosed else { return }
-        if closed { lidClosing() } else { current = max(current, 1); lidOpened() }
+        if closed {
+            target = 1
+        } else {
+            follower.jump(to: max(follower.value, 1))
+            target = 0
+        }
     }
 
     private func schedule(interval: TimeInterval) {
