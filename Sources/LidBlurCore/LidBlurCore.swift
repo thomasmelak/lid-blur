@@ -1,21 +1,35 @@
 import Foundation
 
-/// Maps a lid angle (degrees) to a blur strength between 0 (sharp) and 1 (fully blurred).
-public struct BlurCurve: Equatable, Sendable {
-    /// At or below this angle the screen is fully blurred.
-    public var closedAngle: Double
-    /// At or above this angle the screen is completely sharp.
-    public var clearAngle: Double
+/// Turns the lid angle into open/closed events. The angle only triggers the animation; the
+/// animation itself runs on its own easing curve, so opening the lid quickly still eases into
+/// sharpness. A little hysteresis stops the state flickering when the lid rests near the edge.
+public struct LidTrigger: Equatable, Sendable {
+    /// The lid counts as open once it rises to this angle.
+    public var openAngle: Double
+    /// The lid counts as closed again once it falls this many degrees below `openAngle`.
+    public var hysteresis: Double
+    public private(set) var isOpen: Bool?
 
-    public init(closedAngle: Double = 10, clearAngle: Double = 80) {
-        self.closedAngle = closedAngle
-        self.clearAngle = clearAngle
+    public init(openAngle: Double = 40, hysteresis: Double = 10) {
+        self.openAngle = openAngle
+        self.hysteresis = hysteresis
     }
 
-    public func strength(forAngle angle: Double) -> Double {
-        guard clearAngle > closedAngle else { return angle <= closedAngle ? 1 : 0 }
-        let t = Easing.clamp((angle - closedAngle) / (clearAngle - closedAngle))
-        return 1 - Easing.smoothstep(t)
+    /// Feeds a new angle reading. Returns the new state when it changed, else nil.
+    public mutating func update(angle: Double) -> Bool? {
+        let open: Bool
+        if isOpen == true {
+            open = angle > openAngle - hysteresis
+        } else {
+            open = angle >= openAngle
+        }
+        let changed = open != isOpen
+        isOpen = open
+        return changed ? open : nil
+    }
+
+    public mutating func reset() {
+        isOpen = nil
     }
 }
 

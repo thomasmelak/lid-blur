@@ -1,30 +1,34 @@
 import XCTest
 @testable import LidBlurCore
 
-final class BlurCurveTests: XCTestCase {
-    func testEndpoints() {
-        let curve = BlurCurve(closedAngle: 10, clearAngle: 70)
-        XCTAssertEqual(curve.strength(forAngle: 0), 1)
-        XCTAssertEqual(curve.strength(forAngle: 10), 1)
-        XCTAssertEqual(curve.strength(forAngle: 70), 0)
-        XCTAssertEqual(curve.strength(forAngle: 120), 0)
-        XCTAssertEqual(curve.strength(forAngle: 40), 0.5, accuracy: 1e-9)
+final class LidBlurCoreTests: XCTestCase {
+    func testTriggerFirstReading() {
+        var open = LidTrigger(openAngle: 40)
+        XCTAssertEqual(open.update(angle: 110), true)
+        var closed = LidTrigger(openAngle: 40)
+        XCTAssertEqual(closed.update(angle: 5), false)
     }
 
-    func testMonotonicallyDecreasing() {
-        let curve = BlurCurve()
-        var previous = 2.0
-        for angle in stride(from: 0.0, through: 180.0, by: 1.0) {
-            let s = curve.strength(forAngle: angle)
-            XCTAssertLessThanOrEqual(s, previous)
-            previous = s
-        }
+    func testTriggerFiresOncePerTransition() {
+        var trigger = LidTrigger(openAngle: 40, hysteresis: 10)
+        XCTAssertEqual(trigger.update(angle: 0), false)
+        XCTAssertNil(trigger.update(angle: 20))
+        XCTAssertNil(trigger.update(angle: 39))
+        XCTAssertEqual(trigger.update(angle: 40), true)
+        XCTAssertNil(trigger.update(angle: 120))
+        // Inside the hysteresis band: still open.
+        XCTAssertNil(trigger.update(angle: 35))
+        XCTAssertEqual(trigger.update(angle: 30), false)
+        XCTAssertNil(trigger.update(angle: 35))
+        XCTAssertEqual(trigger.update(angle: 45), true)
     }
 
-    func testDegenerateCurve() {
-        let curve = BlurCurve(closedAngle: 50, clearAngle: 50)
-        XCTAssertEqual(curve.strength(forAngle: 49), 1)
-        XCTAssertEqual(curve.strength(forAngle: 51), 0)
+    func testTriggerReset() {
+        var trigger = LidTrigger()
+        _ = trigger.update(angle: 100)
+        trigger.reset()
+        XCTAssertNil(trigger.isOpen)
+        XCTAssertEqual(trigger.update(angle: 100), true)
     }
 
     func testApproachConverges() {

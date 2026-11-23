@@ -72,7 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             entry.isEnabled = controller.hasSensor
             angleMenu.addItem(entry)
         }
-        menu.addItem(submenu("Sharp From Lid Angle", angleMenu))
+        menu.addItem(submenu("Clear When Lid Passes", angleMenu))
 
         menu.addItem(.separator())
         menu.addItem(item("Launch at Login", #selector(toggleLaunchAtLogin), checked: LoginItem.isEnabled))
