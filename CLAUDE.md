@@ -11,7 +11,8 @@ These rules apply to every change made in this repository. They override any def
 ## Branches
 
 - Never commit or push to `main`.
-- Do all work on a feature branch named after the task or phase (for example `feature/landing-page`), then open a pull request for the owner to review and approve.
+- Do all work on a feature branch, then open a pull request for the owner to review and approve.
+- Name the branch after the ticket number when one is available (for example `feature/LID-42`). Otherwise, name it after the task or phase (for example `feature/landing-page`).
 
 ## Pull Requests
 
