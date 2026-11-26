@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lid Blur for macOS</title>
+<meta name="description" content="A tiny macOS menu bar app that blurs your screen as you open and close your MacBook's lid, then eases it into focus from the hinge up.">
+<meta property="og:title" content="Lid Blur for macOS">
+<meta property="og:description" content="Your MacBook screen softly unfolds into focus as you open the lid.">
+<meta property="og:image" content="assets/icon-256.png">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/icon-256.png">
+<style>
+  :root {
+    --bg: #0b0a1a;
+    --bg-2: #13112b;
+    --card: rgba(255,255,255,0.045);
+    --card-border: rgba(255,255,255,0.09);
+    --text: #ecebf7;
+    --muted: #a19fbd;
+    --accent: #7c8cff;
+    --accent-2: #ff4fa3;
+    --code-bg: #07061a;
+    --radius: 18px;
+    --max: 1040px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 15% -10%, #2c2470 0%, transparent 60%),
+      radial-gradient(900px 500px at 100% 10%, #3a1640 0%, transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 20px; }
+
+  /* Nav */
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--text); }
+  .brand img { width: 30px; height: 30px; }
+  .nav-links { display: flex; gap: 22px; font-size: 15px; }
+  .nav-links a { color: var(--muted); }
+  .nav-links a:hover { color: var(--text); text-decoration: none; }
+
+  /* Hero */
+  .hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; padding: 48px 0 72px; }
+  .hero h1 { font-size: clamp(40px, 6vw, 64px); line-height: 1.04; letter-spacing: -0.03em; margin: 0 0 18px; font-weight: 700; }
+  .hero h1 span {
+    background: linear-gradient(90deg, #8fa0ff, #ff6fb5);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .lead { font-size: 19px; color: var(--muted); margin: 0 0 30px; max-width: 30em; }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 14px 22px; border-radius: 14px; font-weight: 600; font-size: 16px;
+    border: 1px solid transparent; transition: transform .15s, box-shadow .15s, background .15s;
+  }
+  .btn:hover { text-decoration: none; transform: translateY(-1px); }
+  .btn-primary { background: linear-gradient(135deg, #6a7bff, #b14dff); color: #fff; box-shadow: 0 8px 30px rgba(124,108,255,.35); }
+  .btn-primary:hover { box-shadow: 0 10px 36px rgba(124,108,255,.5); }
+  .btn-ghost { background: var(--card); border-color: var(--card-border); color: var(--text); }
+  .btn svg { width: 18px; height: 18px; }
+  .meta { margin-top: 14px; font-size: 14px; color: var(--muted); }
+
+  /* Laptop demo */
+  .stage { perspective: 1400px; display: flex; justify-content: center; padding: 20px 0; }
+  .laptop { width: min(440px, 86%); position: relative; }
+  .lid {
+    position: relative; aspect-ratio: 16 / 10.4; border-radius: 16px 16px 6px 6px;
+    background: #1b1a24; padding: 3.2%; border: 1px solid #34323f;
+    transform-origin: 50% 100%;
+    animation: fold 6s cubic-bezier(.45,.05,.25,1) infinite;
+    box-shadow: 0 30px 60px rgba(0,0,0,.45);
+  }
+  .screen { position: relative; width: 100%; height: 100%; border-radius: 6px; overflow: hidden; background: #000; }
+  .wallpaper {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(60% 70% at 20% 25%, #3fb4c4 0%, transparent 60%),
+      radial-gradient(55% 60% at 70% 20%, #4d6bff 0%, transparent 65%),
+      radial-gradient(50% 55% at 25% 95%, #ff7a3d 0%, transparent 60%),
+      radial-gradient(50% 55% at 85% 85%, #ff3d9a 0%, transparent 60%),
+      #1d1d7a;
+  }
+  .window {
+    position: absolute; left: 9%; top: 12%; width: 58%; height: 42%;
+    border-radius: 8px; background: rgba(255,255,255,.78);
+    box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  }
+  .window::before {
+    content: ""; position: absolute; left: 6%; top: 9%; width: 20%; height: 8%;
+    background: radial-gradient(circle at 10% 50%, #ff5f57 0 22%, transparent 24%),
+                radial-gradient(circle at 50% 50%, #febc2e 0 22%, transparent 24%),
+                radial-gradient(circle at 90% 50%, #28c840 0 22%, transparent 24%);
+  }
+  .window::after {
+    content: ""; position: absolute; left: 6%; right: 8%; top: 30%; bottom: 14%;
+    background: repeating-linear-gradient(#c9c8d6 0 7%, transparent 7% 20%);
+    border-radius: 2px;
+  }
+  .dock {
+    position: absolute; left: 50%; bottom: 6%; transform: translateX(-50%);
+    display: flex; gap: 5px; padding: 5px; border-radius: 10px; background: rgba(255,255,255,.22);
+  }
+  .dock i { width: 18px; height: 18px; border-radius: 5px; background: rgba(255,255,255,.85); display: block; }
+  .dock i:nth-child(2) { background: #ffd6c2; } .dock i:nth-child(4) { background: #d4c2ff; } .dock i:nth-child(6) { background: #ffc2e1; }
+  /* The blur clears from the hinge (bottom) upwards, like the app's Unfold style. */
+  .blur {
+    position: absolute; inset: -2px;
+    backdrop-filter: blur(16px) saturate(1.2); -webkit-backdrop-filter: blur(16px) saturate(1.2);
+    background: rgba(5,4,20,.55);
+    -webkit-mask-image: linear-gradient(to top, transparent 0%, #000 22%);
+            mask-image: linear-gradient(to top, transparent 0%, #000 22%);
+    -webkit-mask-size: 100% 300%; mask-size: 100% 300%;
+    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+    animation: reveal 6s cubic-bezier(.45,.05,.25,1) infinite;
+  }
+  .base {
+    height: 14px; margin: 0 -7%; border-radius: 2px 2px 14px 14px;
+    background: linear-gradient(#e6e6ee, #a6a6b2); position: relative;
+  }
+  .base::before {
+    content: ""; position: absolute; left: 50%; top: 0; transform: translateX(-50%);
+    width: 18%; height: 5px; border-radius: 0 0 6px 6px; background: #8c8c99;
+  }
+  .glow { position: absolute; left: 10%; right: 10%; bottom: -40px; height: 60px; background: radial-gradient(closest-side, rgba(255,120,120,.25), transparent); filter: blur(10px); }
+  @keyframes fold {
+    0%, 8%   { transform: rotateX(-82deg); }
+    45%, 80% { transform: rotateX(0deg); }
+    100%     { transform: rotateX(-82deg); }
+  }
+  @keyframes reveal {
+    0%, 14%  { -webkit-mask-position: 0 100%; mask-position: 0 100%; }
+    52%, 74% { -webkit-mask-position: 0 0%;   mask-position: 0 0%; }
+    96%,100% { -webkit-mask-position: 0 100%; mask-position: 0 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lid, .blur { animation: none; }
+    .blur { -webkit-mask-position: 0 40%; mask-position: 0 40%; }
+  }
+
+  /* Sections */
+  section { padding: 56px 0; }
+  h2 { font-size: 32px; letter-spacing: -0.02em; margin: 0 0 10px; }
+  .sub { color: var(--muted); margin: 0 0 32px; max-width: 40em; }
+  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius); padding: 24px; }
+  .card h3 { margin: 0 0 8px; font-size: 18px; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  .card .ico { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; margin-bottom: 14px; background: linear-gradient(135deg, rgba(124,140,255,.25), rgba(255,79,163,.2)); }
+  .card .ico svg { width: 20px; height: 20px; stroke: #c9cfff; }
+
+  /* Tabs */
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; background: var(--card); border: 1px solid var(--card-border); padding: 6px; border-radius: 14px; width: fit-content; max-width: 100%; margin-bottom: 20px; }
+  .tab { appearance: none; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 15px; font-weight: 600; padding: 9px 16px; border-radius: 10px; cursor: pointer; }
+  .tab[aria-selected="true"] { background: rgba(255,255,255,.1); color: var(--text); }
+  .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .steps { list-style: none; counter-reset: s; padding: 0; margin: 0; display: grid; gap: 14px; }
+  .steps > li { counter-increment: s; position: relative; padding: 18px 20px 18px 64px; background: var(--card); border: 1px solid var(--card-border); border-radius: 14px; }
+  .steps > li::before { content: counter(s); position: absolute; left: 20px; top: 17px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; background: linear-gradient(135deg, #6a7bff, #b14dff); color: #fff; }
+  .steps p { margin: 0; }
+  .steps p + p, .steps p + .code, .steps .code + p { margin-top: 10px; }
+
+  .code { position: relative; background: var(--code-bg); border: 1px solid var(--card-border); border-radius: 12px; }
+  .code pre { margin: 0; padding: 14px 56px 14px 16px; overflow-x: auto; font: 14px/1.55 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: #dcdcf5; }
+  .code pre .p { color: #6f6d92; user-select: none; }
+  .copy { position: absolute; top: 8px; right: 8px; border: 1px solid var(--card-border); background: rgba(255,255,255,.06); color: var(--muted); border-radius: 8px; padding: 5px 9px; font: 12px/1 inherit; font-family: inherit; cursor: pointer; }
+  .copy:hover { color: var(--text); }
+  code.inline { font: 0.9em ui-monospace, "SF Mono", Menlo, monospace; background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 6px; }
+
+  .note { display: flex; gap: 14px; padding: 18px 20px; border-radius: 14px; background: rgba(255,190,80,.08); border: 1px solid rgba(255,190,80,.25); margin-top: 22px; }
+  .note > div, .steps > li, .card { min-width: 0; }
+  .note svg { flex: none; width: 22px; height: 22px; stroke: #ffc566; margin-top: 2px; }
+  .note h4 { margin: 0 0 6px; font-size: 16px; }
+  .note p { margin: 0 0 10px; color: #d9d4c2; font-size: 15px; }
+  .note p:last-child { margin-bottom: 0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--card-border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  .table-card { padding: 6px 8px; overflow-x: auto; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  details { background: var(--card); border: 1px solid var(--card-border); border-radius: 14px; padding: 16px 20px; }
+  details + details { margin-top: 10px; }
+  summary { cursor: pointer; font-weight: 600; }
+  details p { color: var(--muted); margin: 10px 0 0; }
+
+  footer { padding: 40px 0 60px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--card-border); margin-top: 40px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+  @media (max-width: 860px) {
+    .hero { grid-template-columns: 1fr; padding-top: 24px; gap: 28px; }
+    .stage { order: -1; }
+    .features, .grid-2 { grid-template-columns: 1fr; }
+    .nav-links a.hide-sm { display: none; }
+  }
+  @media (max-width: 480px) {
+    .steps > li { padding: 16px 16px 16px 56px; }
+    .steps > li::before { left: 16px; }
+    .btn { width: 100%; justify-content: center; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="#"><img src="assets/favicon.png" alt="" width="30" height="30">Lid Blur</a>
+    <div class="nav-links">
+      <a href="#features" class="hide-sm">Features</a>
+      <a href="#install">Install</a>
+      <a href="#uninstall" class="hide-sm">Uninstall</a>
+      <a href="https://github.com/thomasmelak/lid-blur">GitHub</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div>
+      <h1>Open your Mac like it <span>unfolds</span>.</h1>
+      <p class="lead">Lid Blur is a tiny menu bar app that melts your MacBook screen into a soft blur as the lid closes, then eases it back into focus from the hinge up as you open it.</p>
+      <div class="cta">
+        <a class="btn btn-primary" id="download" href="https://github.com/thomasmelak/lid-blur/releases/latest/download/LidBlur.dmg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 19h16"/></svg>
+          Download for macOS
+        </a>
+        <a class="btn btn-ghost" href="#install">Install guide</a>
+      </div>
+      <p class="meta"><span id="version">Latest release</span> · Free and open source · macOS 13 Ventura or later · Apple silicon and Intel</p>
+    </div>
+    <div class="stage" aria-hidden="true">
+      <div class="laptop">
+        <div class="lid">
+          <div class="screen">
+            <div class="wallpaper"></div>
+            <div class="window"></div>
+            <div class="dock"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="blur"></div>
+          </div>
+        </div>
+        <div class="base"></div>
+        <div class="glow"></div>
+      </div>
+    </div>
+  </header>
+
+  <section id="features">
+    <h2>Follows the hinge, smoothly</h2>
+    <p class="sub">Inspired by the gentle open animation of foldable phones, built to stay out of your way.</p>
+    <div class="features">
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18M6 18l2-12h8l2 12"/></svg></div>
+        <h3>Tied to the lid angle</h3>
+        <p>On MacBooks with a hinge sensor, the blur tracks the angle of the lid through an easing spring, so slow and quick opens both glide into focus.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V4m0 0l-6 6m6-6l6 6"/></svg></div>
+        <h3>Clears from the bottom up</h3>
+        <p>The Unfold style sharpens the picture from the hinge upwards, and the darkness lifts before the blur resolves. Prefer an even fade? Switch to Uniform.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></div>
+        <h3>Works on every MacBook</h3>
+        <p>No sensor? Lid Blur falls back to lid and wake events and plays the unfold each time the screen comes back. Click-through, built-in display only.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <h2>Install</h2>
+    <p class="sub">Pick whichever way you like. Every option installs the same app, starts it, and turns on Launch at Login.</p>
+
+    <div class="tabs" role="tablist" aria-label="Install method">
+      <button class="tab" role="tab" aria-selected="true" aria-controls="p-dmg" id="t-dmg">Download (DMG)</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="p-brew" id="t-brew" tabindex="-1">Homebrew</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="p-curl" id="t-curl" tabindex="-1">One-line installer</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="p-src" id="t-src" tabindex="-1">From source</button>
+    </div>
+
+    <div class="panel active" role="tabpanel" id="p-dmg" aria-labelledby="t-dmg">
+      <ol class="steps">
+        <li><p>Download <a href="https://github.com/thomasmelak/lid-blur/releases/latest/download/LidBlur.dmg"><strong>LidBlur.dmg</strong></a> from the latest release.</p></li>
+        <li><p>Open the DMG and drag <strong>Lid Blur</strong> onto the <strong>Applications</strong> folder.</p></li>
+        <li><p>Open Lid Blur from Applications. The first time, macOS will block it because the app isn't notarized; see <a href="#first-open">Opening it the first time</a> below.</p></li>
+        <li><p>Look for the laptop icon in the menu bar. That's it.</p></li>
+      </ol>
+    </div>
+
+    <div class="panel" role="tabpanel" id="p-brew" aria-labelledby="t-brew">
+      <ol class="steps">
+        <li>
+          <p>Add the tap and install the cask:</p>
+          <div class="code"><pre><span class="p">$ </span>brew tap thomasmelak/lid-blur https://github.com/thomasmelak/lid-blur
+<span class="p">$ </span>brew install --cask lid-blur</pre><button class="copy">Copy</button></div>
+        </li>
+        <li><p>Homebrew clears the quarantine flag and opens the app for you, so there's no security prompt.</p></li>
+        <li>
+          <p>To update later:</p>
+          <div class="code"><pre><span class="p">$ </span>brew upgrade --cask --greedy lid-blur</pre><button class="copy">Copy</button></div>
+        </li>
+      </ol>
+    </div>
+
+    <div class="panel" role="tabpanel" id="p-curl" aria-labelledby="t-curl">
+      <ol class="steps">
+        <li>
+          <p>Paste this into Terminal:</p>
+          <div class="code"><pre><span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/thomasmelak/lid-blur/main/install.sh | bash</pre><button class="copy">Copy</button></div>
+        </li>
+        <li><p>The script downloads the latest release into <code class="inline">/Applications</code>, clears the quarantine flag and starts the app. If no release exists yet it builds from source, which needs the Xcode Command Line Tools (<code class="inline">xcode-select --install</code>).</p></li>
+      </ol>
+    </div>
+
+    <div class="panel" role="tabpanel" id="p-src" aria-labelledby="t-src">
+      <ol class="steps">
+        <li><p>Make sure the Xcode Command Line Tools are installed (<code class="inline">xcode-select --install</code>).</p></li>
+        <li>
+          <p>Clone, build and install:</p>
+          <div class="code"><pre><span class="p">$ </span>git clone https://github.com/thomasmelak/lid-blur.git
+<span class="p">$ </span>cd lid-blur
+<span class="p">$ </span>make install</pre><button class="copy">Copy</button></div>
+        </li>
+      </ol>
+    </div>
+
+    <div class="note" id="first-open">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 16H3z"/><path d="M12 10v4m0 3v.01"/></svg>
+      <div>
+        <h4>Opening it the first time</h4>
+        <p>Lid Blur is signed but not notarized by Apple, so the first launch of a downloaded copy shows a "cannot be opened" or "Apple could not verify" message. Either:</p>
+        <p>Open <strong>System Settings › Privacy &amp; Security</strong>, scroll down to the message about Lid Blur and click <strong>Open Anyway</strong>, or remove the quarantine flag in Terminal:</p>
+        <div class="code"><pre><span class="p">$ </span>xattr -dr com.apple.quarantine "/Applications/Lid Blur.app"</pre><button class="copy">Copy</button></div>
+        <p style="margin-top:10px">Homebrew and the one-line installer do this for you.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="using">
+    <h2>Using it</h2>
+    <p class="sub">Everything lives in the menu bar icon.</p>
+    <div class="card table-card">
+      <table>
+        <thead><tr><th>Option</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td>Enabled</td><td>Turns the effect on or off</td></tr>
+          <tr><td>Preview Animation</td><td>Plays the blur so you can try settings without moving the lid</td></tr>
+          <tr><td>Style</td><td><strong>Unfold</strong> clears from the bottom up, <strong>Uniform</strong> fades evenly</td></tr>
+          <tr><td>Intensity</td><td>Subtle, Normal or Strong</td></tr>
+          <tr><td>Fully sharp from …</td><td>Slider for the lid angle at which the screen becomes fully sharp, 30° to 130° (sensor Macs only)</td></tr>
+          <tr><td>Use Current Lid Angle</td><td>Sets that angle to wherever your lid is right now</td></tr>
+          <tr><td>Launch at Login</td><td>Starts Lid Blur when you log in (on by default)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="uninstall">
+    <h2>Uninstall</h2>
+    <p class="sub">Any of these removes the app, its login item and its settings.</p>
+    <div class="grid-2">
+      <div class="card">
+        <h3>From the menu bar</h3>
+        <p>Click the laptop icon and choose <strong>Uninstall Lid Blur…</strong></p>
+      </div>
+      <div class="card">
+        <h3>Homebrew</h3>
+        <div class="code" style="margin-top:10px"><pre><span class="p">$ </span>brew uninstall --cask --zap lid-blur</pre><button class="copy">Copy</button></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <h3>Script</h3>
+      <div class="code" style="margin-top:10px"><pre><span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/thomasmelak/lid-blur/main/uninstall.sh | bash</pre><button class="copy">Copy</button></div>
+      <p style="margin-top:10px">Or run <code class="inline">make uninstall</code> in a clone of the repository.</p>
+    </div>
+  </section>
+
+  <section id="faq">
+    <h2>Questions</h2>
+    <details>
+      <summary>Which Macs have the lid angle sensor?</summary>
+      <p>The 16-inch MacBook Pro (2019) and most Apple silicon MacBook Air and MacBook Pro models from 2021 onwards. The first line of the menu says whether yours was found. Without it, Lid Blur uses lid open/close and wake events instead.</p>
+    </details>
+    <details>
+      <summary>Does it need any permissions?</summary>
+      <p>No. The hinge angle is read from Apple's built-in HID sensor, which needs no special access, and the overlay is a click-through window on the built-in display only.</p>
+    </details>
+    <details>
+      <summary>The blur looks like a flat fade.</summary>
+      <p>If <em>Reduce transparency</em> is on in System Settings › Accessibility › Display, macOS replaces blurs with a solid tint, so the effect becomes a fade.</p>
+    </details>
+    <details>
+      <summary>Will it slow my Mac down?</summary>
+      <p>The sensor is polled slowly whenever the lid isn't moving, and the overlay is hidden entirely while the screen is sharp.</p>
+    </details>
+  </section>
+
+  <footer>
+    <span>Lid Blur · Thomas Melak</span>
+    <span><a href="https://github.com/thomasmelak/lid-blur">Source on GitHub</a> · <a href="https://github.com/thomasmelak/lid-blur/releases">All releases</a></span>
+  </footer>
+</div>
+
+<script>
+  // Tabs
+  const tabs = [...document.querySelectorAll('.tab')];
+  function select(tab) {
+    tabs.forEach(t => {
+      const on = t === tab;
+      t.setAttribute('aria-selected', on);
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute('aria-controls')).classList.toggle('active', on);
+    });
+  }
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', () => select(t));
+    t.addEventListener('keydown', e => {
+      const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (!d) return;
+      const n = tabs[(i + d + tabs.length) % tabs.length];
+      select(n); n.focus();
+    });
+  });
+  if (location.hash === '#homebrew') select(document.getElementById('t-brew'));
+
+  // Copy buttons (copies the commands without the "$ " prompts)
+  document.querySelectorAll('.copy').forEach(b => b.addEventListener('click', async () => {
+    const pre = b.parentElement.querySelector('pre').cloneNode(true);
+    pre.querySelectorAll('.p').forEach(p => p.remove());
+    try { await navigator.clipboard.writeText(pre.textContent.trim()); b.textContent = 'Copied'; }
+    catch { b.textContent = 'Press ⌘C'; }
+    setTimeout(() => b.textContent = 'Copy', 1600);
+  }));
+
+  // Show the latest release version next to the download button
+  fetch('https://api.github.com/repos/thomasmelak/lid-blur/releases/latest')
+    .then(r => r.ok ? r.json() : null)
+    .then(r => { if (r && r.tag_name) document.getElementById('version').textContent = 'Version ' + r.tag_name.replace(/^v/, ''); })
+    .catch(() => {});
+</script>
+</body>
+</html>
