@@ -8,7 +8,7 @@ import QuartzCore
 /// runs a variable blur over it: the mask sets the radius per row, so the radius itself is the
 /// gradient (strongest at the top, softer at the hinge) and no part of the screen is left sharp.
 /// Opening the lid lowers the radius everywhere at once until the screen is sharp. There is no
-/// material tint; the screen only darkens towards black near closed.
+/// material tint and no dimming of the picture itself.
 ///
 /// With 3D depth on (and Screen Recording allowed), a live capture of the screen is drawn on
 /// top instead, carrying the same blur but scaled down and tilted back from the hinge, so the
@@ -21,7 +21,6 @@ final class BlurOverlay: NSObject {
     private var window: NSWindow?
     private var backdrop: BackdropBlur?
     private var fallbackView: NSVisualEffectView?
-    private var tintView: NSView?
     private var stageView: NSView?
     private var stage: CALayer?
     /// Holds the perspective. A plain layer with a centred anchor, so the vanishing point is the
@@ -35,8 +34,6 @@ final class BlurOverlay: NSObject {
     private var displayID: CGDirectDisplayID = 0
     private var pixelSize = CGSize.zero
 
-    /// How dark the screen gets when the lid is closed, on top of the blur.
-    private let maxTint = 0.9
 
     override init() {
         super.init()
@@ -52,7 +49,7 @@ final class BlurOverlay: NSObject {
             hide()
             return
         }
-        guard let window = ensureWindow(), let tintView else { return }
+        guard let window = ensureWindow() else { return }
 
         if let backdrop {
             window.alphaValue = 1
@@ -61,7 +58,6 @@ final class BlurOverlay: NSObject {
             // The stock material has a fixed radius, so the only control left is its opacity.
             window.alphaValue = CGFloat(Easing.clamp(profile.topRadius / (BlurProfile.maxRadius * 0.5)))
         }
-        tintView.alphaValue = CGFloat(profile.dim * maxTint)
 
         if !window.isVisible { window.orderFrontRegardless() }
 
@@ -99,7 +95,9 @@ final class BlurOverlay: NSObject {
         surround.frame = bounds
         // How far back the picture sits, 0...1; the surround darkens with it.
         let depth = (1 - look.scale) / (1 - DepthLook.minScale)
-        surround.opacity = Float(0.45 * depth)
+        // Fully black for most of the travel: the dark margin around the picture is what makes it read
+        // as sitting behind the glass. The picture itself is never dimmed.
+        surround.opacity = Float(min(1, 1.6 * depth))
 
         pivot.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         pivot.bounds = bounds
@@ -113,7 +111,9 @@ final class BlurOverlay: NSObject {
         let layer = mirror.layer
         layer.anchorPoint = CGPoint(x: 0.5, y: 0)
         layer.bounds = bounds
-        layer.position = CGPoint(x: size.width / 2, y: 0)
+        // Lift the hinge edge a little as the picture recedes, so the dark margin shows on every
+        // side (widest at the top, where the tilt pulls the picture back).
+        layer.position = CGPoint(x: size.width / 2, y: (1 - CGFloat(look.scale)) * size.height * 0.3)
         var transform = CATransform3DMakeScale(CGFloat(look.scale), CGFloat(look.scale), 1)
         // Negative angle: the top edge leans away from the viewer, pivoting on the hinge.
         transform = CATransform3DRotate(transform, -CGFloat(look.tilt * .pi / 180), 1, 0, 0)
@@ -142,7 +142,6 @@ final class BlurOverlay: NSObject {
         window = nil
         backdrop = nil
         fallbackView = nil
-        tintView = nil
         stageView = nil
         stage = nil
         pivot = nil
@@ -245,16 +244,9 @@ final class BlurOverlay: NSObject {
         container.addSubview(stageView)
         mirrorBlur = BlurFilter.attach(to: mirror.layer)
 
-        let tint = NSView(frame: bounds)
-        tint.autoresizingMask = [.width, .height]
-        tint.wantsLayer = true
-        tint.layer?.backgroundColor = NSColor.black.cgColor
-        tint.alphaValue = 0
-        container.addSubview(tint)
 
         window.contentView = container
         self.window = window
-        self.tintView = tint
         self.stageView = stageView
         self.stage = stage
         self.pivot = pivot
@@ -264,7 +256,7 @@ final class BlurOverlay: NSObject {
     }
 
     /// Feather width of the picture's edges, in points.
-    private static let featherWidth = 80
+    private static let featherWidth = 48
 
     /// An alpha mask that is opaque in the middle and fades to transparent over `featherWidth`
     /// at every edge, with smoothly rounded corners. Its centre pixel is stretched over the

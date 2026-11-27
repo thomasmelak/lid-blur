@@ -175,8 +175,8 @@ public struct DepthLook: Equatable, Sendable {
     /// Backward tilt around the hinge, in degrees (0 = upright).
     public let tilt: Double
 
-    public static let minScale = 0.86
-    public static let maxTilt = 14.0
+    public static let minScale = 0.78
+    public static let maxTilt = 20.0
 
     public init(fold: Double) {
         // Eased on both ends: the picture leaves the glass gently, travels, and settles softly.
