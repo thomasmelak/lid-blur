@@ -1,6 +1,7 @@
 #!/bin/bash
-# Creates a self-signed code signing certificate for Lid Blur and stores it as the GitHub
-# Actions secrets used by the CI and Release workflows. Builds signed with the same certificate
+# Creates a self-signed code signing certificate for Lid Blur, imports it into the login
+# keychain for local builds, and stores it as the GitHub Actions secrets used by the CI and
+# Release workflows. Builds signed with the same certificate
 # keep macOS privacy permissions (Screen Recording) across updates; ad hoc builds do not.
 #
 # Run once on a Mac with the GitHub CLI signed in:   scripts/make-signing-cert.sh
@@ -38,6 +39,13 @@ openssl pkcs12 -export "${LEGACY[@]+"${LEGACY[@]}"}" -name "$NAME" \
     -inkey "$WORK/key.pem" -in "$WORK/cert.pem" -out "$WORK/cert.p12" -passout "pass:$PASSWORD"
 
 CERT_B64="$(base64 < "$WORK/cert.p12" | tr -d '\n')"
+
+# Local builds (scripts/build-app.sh) pick this identity up from the login keychain.
+if command -v security >/dev/null 2>&1; then
+    security import "$WORK/cert.p12" -k "$HOME/Library/Keychains/login.keychain-db" \
+        -P "$PASSWORD" -T /usr/bin/codesign >/dev/null
+    echo "Imported \"$NAME\" into the login keychain for local builds."
+fi
 
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     printf '%s' "$CERT_B64" | gh secret set MACOS_SIGNING_CERT
