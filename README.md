@@ -103,7 +103,15 @@ Any of these removes the app, its login item and its settings:
 ## Releasing
 
 Push a tag like `v0.1.0`, or run the **Release** workflow from the Actions tab with a tag name.
-It runs the tests, builds a universal, ad-hoc signed app, and publishes `LidBlur.zip` and
+It runs the tests, builds a universal app, and publishes `LidBlur.zip` and
 `LidBlur.dmg` to a GitHub release. The one-line installer and the download link always point
 at the latest release. The workflow also opens a pull request that bumps the version and
 sha256 in `Casks/lid-blur.rb`; merge it and `brew upgrade` offers the new version.
+
+### Signing
+
+Builds are signed with a self-signed certificate when the `MACOS_SIGNING_CERT` and
+`MACOS_SIGNING_CERT_PASSWORD` repository secrets are set, and ad hoc otherwise. A stable
+certificate keeps the Screen Recording permission across updates; with ad hoc signing macOS asks
+again after every build. `scripts/make-signing-cert.sh` creates the certificate and stores both
+secrets with the GitHub CLI. For local builds, pass `SIGN_IDENTITY` to `scripts/build-app.sh`.

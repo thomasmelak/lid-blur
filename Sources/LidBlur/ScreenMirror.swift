@@ -1,6 +1,9 @@
 import AppKit
 import CoreMedia
 import ScreenCaptureKit
+import os
+
+private let log = Logger(subsystem: "com.thomasmelak.LidBlur", category: "capture")
 
 /// A live copy of the built-in display (without this app's own windows), drawn into `layer`.
 /// The overlay uses it to redraw the screen scaled and tilted back while the lid is folded,
@@ -15,6 +18,12 @@ final class ScreenMirror: NSObject {
     private var starting = false
     private var wanted = false
     private let output = FrameOutput()
+    /// After a failed start, wait before trying again instead of retrying every frame.
+    private var retryAfter: CFTimeInterval = 0
+    private var frameCount = 0
+
+    /// What the capture is doing, shown in the menu so a silent failure is visible.
+    private(set) var status = "idle"
 
     private static var permissionCache: (granted: Bool, checked: CFTimeInterval)?
 
@@ -32,6 +41,14 @@ final class ScreenMirror: NSObject {
         _ = CGRequestScreenCaptureAccess()
     }
 
+    /// Opens Privacy & Security > Screen Recording in System Settings.
+    static func openPrivacySettings() {
+        permissionCache = nil
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     override init() {
         super.init()
         layer.contentsGravity = .resize
@@ -44,13 +61,27 @@ final class ScreenMirror: NSObject {
 
     func start(displayID: CGDirectDisplayID, pixelSize: CGSize) {
         wanted = true
-        guard stream == nil, !starting, ScreenMirror.hasPermission else { return }
+        guard stream == nil, !starting else { return }
+        guard ScreenMirror.hasPermission else {
+            setStatus("no Screen Recording permission")
+            return
+        }
+        guard CACurrentMediaTime() >= retryAfter else { return }
         starting = true
+        setStatus("starting")
         Task { @MainActor in
             defer { starting = false }
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-                guard wanted, let display = content.displays.first(where: { $0.displayID == displayID }) else { return }
+                guard wanted else {
+                    setStatus("idle")
+                    return
+                }
+                guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
+                    let ids = content.displays.map { String($0.displayID) }.joined(separator: ", ")
+                    fail("display \(displayID) not in shareable displays [\(ids)]")
+                    return
+                }
                 let ownPID = ProcessInfo.processInfo.processIdentifier
                 let own = content.applications.filter { $0.processID == ownPID }
                 let filter = SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
@@ -69,19 +100,35 @@ final class ScreenMirror: NSObject {
                 try await stream.startCapture()
                 if wanted {
                     self.stream = stream
+                    frameCount = 0
+                    setStatus("running, waiting for frames")
                 } else {
                     try? await stream.stopCapture()
+                    setStatus("idle")
                 }
             } catch {
                 self.stream = nil
+                fail(error.localizedDescription)
             }
         }
+    }
+
+    private func fail(_ reason: String) {
+        retryAfter = CACurrentMediaTime() + 2
+        setStatus("failed: \(reason)")
+    }
+
+    private func setStatus(_ text: String) {
+        guard text != status else { return }
+        status = text
+        log.notice("3D capture: \(text, privacy: .public)")
     }
 
     func stop() {
         wanted = false
         hasFrame = false
         layer.contents = nil
+        if !status.hasPrefix("failed") && status != "no Screen Recording permission" { setStatus("idle") }
         guard let stream else { return }
         self.stream = nil
         Task { try? await stream.stopCapture() }
@@ -94,12 +141,15 @@ final class ScreenMirror: NSObject {
         layer.contents = surface
         CATransaction.commit()
         hasFrame = true
+        frameCount += 1
+        if frameCount == 1 { setStatus("running") }
     }
 
     /// Restarts on the next request if the system stops the stream (sleep, display change).
-    fileprivate func streamStopped() {
+    fileprivate func streamStopped(_ error: Error) {
         stream = nil
         hasFrame = false
+        fail("stream stopped: \(error.localizedDescription)")
     }
 
     /// Receives frames on the capture queue and hands complete ones to the main actor.
@@ -122,7 +172,7 @@ final class ScreenMirror: NSObject {
         }
 
         func stream(_ stream: SCStream, didStopWithError error: Error) {
-            Task { @MainActor [weak self] in self?.mirror?.streamStopped() }
+            Task { @MainActor [weak self] in self?.mirror?.streamStopped(error) }
         }
     }
 }

@@ -25,6 +25,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test
         run: swift test
+      - name: Signing certificate
+        env:
+          MACOS_SIGNING_CERT: ${{ secrets.MACOS_SIGNING_CERT }}
+          MACOS_SIGNING_CERT_PASSWORD: ${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}
+        run: scripts/import-signing-cert.sh
       - name: Build app (universal)
         run: UNIVERSAL=1 VERSION="$TAG" scripts/build-app.sh
       - name: Build DMG
