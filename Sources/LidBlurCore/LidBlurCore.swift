@@ -103,28 +103,44 @@ public struct FoldLook: Equatable, Sendable {
     }
 }
 
-/// Describes the "unfold" reveal: the sharp area rises from the bottom edge of the screen
-/// (the hinge) towards the top as the blur strength falls. Positions are fractions of the
-/// screen height measured from the bottom.
-public struct UnfoldMask: Equatable, Sendable {
-    /// Height fraction (0...1), from the bottom, that is completely sharp.
-    public let clearEdge: Double
-    /// Height fraction where the blur is back to full strength.
-    public let blurEdge: Double
-    /// Blur coverage at the very bottom edge (0 = sharp, 1 = blurred).
-    public let bottomCoverage: Double
+/// A variable blur over the whole screen. The radius itself is the gradient: strongest at
+/// the top edge, weaker towards the hinge, but never zero anywhere while the screen is folded.
+/// Nothing is ever revealed sharp; the whole screen eases to sharp together as the lid opens.
+public struct BlurProfile: Equatable, Sendable {
+    /// Blur radius at the top edge, in points.
+    public let topRadius: Double
+    /// Radius at the hinge as a fraction of the top radius (`hingeFloor`...1).
+    public let hingeRatio: Double
+    /// Darkening, 0...1.
+    public let dim: Double
 
-    public static let feather = 0.35
+    /// Top radius at full strength. Strong enough to hide text, soft enough that windows,
+    /// icons and the wallpaper stay recognisable, like the foldable-phone panel.
+    public static let maxRadius = 30.0
+    /// The hinge never gets less than this share of the top radius.
+    public static let hingeFloor = 0.4
+    /// Below this radius the effect is invisible and the overlay can be removed.
+    public static let visibleRadius = 0.25
 
-    public init(strength: Double) {
-        let progress = 1 - Easing.clamp(strength)
-        let inner = progress * (1 + UnfoldMask.feather) - UnfoldMask.feather
-        let outer = inner + UnfoldMask.feather
-        clearEdge = Easing.clamp(inner)
-        blurEdge = Easing.clamp(outer)
-        bottomCoverage = inner >= 0 ? 0 : Easing.clamp(-inner / UnfoldMask.feather)
+    /// - Parameters:
+    ///   - fold: 0 with the lid open, 1 with it closed.
+    ///   - gradient: false for an even blur over the whole screen.
+    ///   - scale: intensity multiplier for the radius.
+    public init(fold: Double, gradient: Bool = true, scale: Double = 1) {
+        let f = Easing.clamp(fold)
+        let look = FoldLook(fold: f)
+        topRadius = BlurProfile.maxRadius * Easing.clamp(scale) * look.blur
+        // Closed, the panel is evenly blurred; as it opens the hinge clears faster than the
+        // top, but stays above the floor until the whole screen is sharp.
+        hingeRatio = gradient ? BlurProfile.hingeFloor + (1 - BlurProfile.hingeFloor) * Easing.smoothstep(f) : 1
+        dim = look.dim
     }
 
-    public var isFullyBlurred: Bool { blurEdge <= 0 }
-    public var isFullyClear: Bool { clearEdge >= 1 }
+    public var hingeRadius: Double { topRadius * hingeRatio }
+    public var isVisible: Bool { topRadius >= BlurProfile.visibleRadius || dim > 0.002 }
+
+    /// Share of the top radius at a height measured from the top edge (0) to the hinge (1).
+    public static func coverage(atDepth depth: Double, hingeRatio: Double) -> Double {
+        1 - (1 - Easing.clamp(hingeRatio)) * Easing.smoothstep(depth)
+    }
 }

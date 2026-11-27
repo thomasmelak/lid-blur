@@ -1,13 +1,23 @@
 import AppKit
 import LidBlurCore
+import QuartzCore
 
 /// A click-through, full-screen window on the built-in display that blurs everything behind it.
+///
+/// The blur is a backdrop layer that samples the window server's content behind the window and
+/// runs a variable blur over it: the mask sets the radius per row, so the radius itself is the
+/// gradient (strongest at the top, softer at the hinge) and no part of the screen is left sharp.
+/// Opening the lid lowers the radius everywhere at once until the screen is sharp. There is no
+/// material tint; the screen only darkens towards black near closed.
+///
+/// If the backdrop classes are unavailable, it falls back to an even blur, and as a last resort
+/// to a standard visual-effect view without any mask.
 @MainActor
 final class BlurOverlay: NSObject {
     private var window: NSWindow?
-    private var effectView: NSVisualEffectView?
+    private var backdrop: BackdropBlur?
+    private var fallbackView: NSVisualEffectView?
     private var tintView: NSView?
-    private var lastMaskKey = -1
 
     /// How dark the screen gets when the lid is closed, on top of the blur.
     private let maxTint = 0.9
@@ -19,31 +29,23 @@ final class BlurOverlay: NSObject {
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
 
-    /// `strength` is the fold amount: 0 with the lid open, 1 with it closed.
-    func apply(strength: Double, style: BlurStyle, maxOpacity: Double) {
-        let look = FoldLook(fold: strength)
-        let s = look.blur
-        guard s > 0.002 else {
+    /// `fold` is 0 with the lid open and 1 with it closed.
+    func apply(fold: Double, style: BlurStyle, radiusScale: Double) {
+        let profile = BlurProfile(fold: fold, gradient: style == .unfold, scale: radiusScale)
+        guard profile.isVisible else {
             hide()
             return
         }
-        guard let window = ensureWindow(), let effectView, let tintView else { return }
+        guard let window = ensureWindow(), let tintView else { return }
 
-        switch style {
-        case .uniform:
-            window.alphaValue = CGFloat(s * maxOpacity)
-            if effectView.maskImage != nil { effectView.maskImage = nil }
-            lastMaskKey = -1
-        case .unfold:
-            // The reveal is spatial, so keep the window mostly opaque and let the mask do the work.
-            window.alphaValue = CGFloat(min(1, s * 2.5) * maxOpacity)
-            let key = Int((s * 240).rounded())
-            if key != lastMaskKey {
-                lastMaskKey = key
-                effectView.maskImage = BlurOverlay.unfoldMask(UnfoldMask(strength: s))
-            }
+        if let backdrop {
+            window.alphaValue = 1
+            backdrop.update(topRadius: profile.topRadius, hingeRatio: profile.hingeRatio)
+        } else if fallbackView != nil {
+            // The stock material has a fixed radius, so the only control left is its opacity.
+            window.alphaValue = CGFloat(Easing.clamp(profile.topRadius / (BlurProfile.maxRadius * 0.5)))
         }
-        tintView.alphaValue = CGFloat(look.dim * maxTint)
+        tintView.alphaValue = CGFloat(profile.dim * maxTint)
 
         if !window.isVisible { window.orderFrontRegardless() }
     }
@@ -56,9 +58,9 @@ final class BlurOverlay: NSObject {
         // Rebuilt on the next frame for whatever the built-in display looks like now.
         window?.orderOut(nil)
         window = nil
-        effectView = nil
+        backdrop = nil
+        fallbackView = nil
         tintView = nil
-        lastMaskKey = -1
     }
 
     private func builtInScreen() -> NSScreen? {
@@ -96,13 +98,19 @@ final class BlurOverlay: NSObject {
         let container = NSView(frame: bounds)
         container.autoresizingMask = [.width, .height]
 
-        let effect = NSVisualEffectView(frame: bounds)
-        effect.autoresizingMask = [.width, .height]
-        effect.material = .fullScreenUI
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        effect.appearance = NSAppearance(named: .darkAqua)
-        container.addSubview(effect)
+        if let blur = BackdropBlur(frame: bounds) {
+            container.addSubview(blur.view)
+            backdrop = blur
+        } else {
+            let effect = NSVisualEffectView(frame: bounds)
+            effect.autoresizingMask = [.width, .height]
+            effect.material = .fullScreenUI
+            effect.blendingMode = .behindWindow
+            effect.state = .active
+            effect.appearance = NSAppearance(named: .darkAqua)
+            container.addSubview(effect)
+            fallbackView = effect
+        }
 
         let tint = NSView(frame: bounds)
         tint.autoresizingMask = [.width, .height]
@@ -113,49 +121,102 @@ final class BlurOverlay: NSObject {
 
         window.contentView = container
         self.window = window
-        self.effectView = effect
         self.tintView = tint
-        lastMaskKey = -1
         return window
     }
+}
 
-    /// A small vertical gradient image, stretched over the screen, used as the blur mask.
-    /// Opaque areas are blurred, transparent areas are sharp. The sharp part starts at the
-    /// bottom edge (the hinge) and rises as the lid opens.
-    private static func unfoldMask(_ mask: UnfoldMask) -> NSImage {
-        let size = NSSize(width: 8, height: 128)
-        let image = NSImage(size: size, flipped: false) { rect in
-            if mask.isFullyBlurred {
-                NSColor.black.setFill()
-                rect.fill()
-                return true
-            }
-            if mask.isFullyClear { return true }
+/// A layer-hosting view whose backdrop layer blurs the content behind the window with a
+/// per-row radius. Uses Core Animation's backdrop layer and filters, the same machinery behind
+/// the system's own blurs, through their Objective-C runtime names.
+@MainActor
+private final class BackdropBlur {
+    let view: NSView
+    private let layer: CALayer
+    private let variable: Bool
+    private var lastRadius = -1.0
+    private var lastMaskKey = -1
 
-            var colors: [NSColor] = []
-            var locations: [CGFloat] = []
-            if mask.bottomCoverage > 0 {
-                colors.append(NSColor.black.withAlphaComponent(CGFloat(mask.bottomCoverage)))
-                locations.append(0)
-            } else {
-                colors.append(.clear)
-                locations.append(CGFloat(mask.clearEdge))
-            }
-            colors.append(.black)
-            locations.append(max(CGFloat(mask.blurEdge), locations[0] + 0.001))
+    private static let variableType = "variableBlur"
+    private static let gaussianType = "gaussianBlur"
+    private static let maskHeight = 256
 
-            guard let gradient = NSGradient(colors: colors, atLocations: &locations, colorSpace: .deviceRGB) else {
-                return false
-            }
-            NSColor.clear.setFill()
-            rect.fill()
-            // Angle 90 runs from the bottom of the rect (location 0) to the top (location 1).
-            // NSGradient extends its end colours past the first and last locations.
-            gradient.draw(in: rect, angle: 90)
-            return true
+    init?(frame: NSRect) {
+        guard let layerClass = NSClassFromString("CABackdropLayer") as? CALayer.Type,
+              let filterClass = NSClassFromString("CAFilter") as? NSObject.Type else {
+            return nil
         }
-        image.resizingMode = .stretch
-        image.capInsets = NSEdgeInsets()
-        return image
+        let types = (filterClass as AnyObject).perform(NSSelectorFromString("filterTypes"))?
+            .takeUnretainedValue() as? [String] ?? []
+        variable = types.contains(BackdropBlur.variableType)
+        let type = variable ? BackdropBlur.variableType : BackdropBlur.gaussianType
+        guard types.contains(type),
+              let filter = (filterClass as AnyObject).perform(NSSelectorFromString("filterWithType:"), with: type)?
+                .takeUnretainedValue() as? NSObject else {
+            return nil
+        }
+        filter.setValue(type, forKey: "name")
+        filter.setValue(0, forKey: "inputRadius")
+        filter.setValue(true, forKey: "inputNormalizeEdges")
+        if variable {
+            filter.setValue(BackdropBlur.mask(hingeRatio: 1), forKey: "inputMaskImage")
+        }
+
+        let layer = layerClass.init()
+        // Sample what the window server draws behind this window, not just our own content.
+        layer.setValue(true, forKey: "windowServerAware")
+        // Blur a half-resolution copy: visually identical at these radii and much cheaper.
+        layer.setValue(0.5, forKey: "scale")
+        layer.frame = CGRect(origin: .zero, size: frame.size)
+        layer.filters = [filter]
+        self.layer = layer
+
+        let view = FlippedView(frame: frame)
+        view.autoresizingMask = [.width, .height]
+        view.layer = layer
+        view.wantsLayer = true
+        self.view = view
     }
+
+    func update(topRadius: Double, hingeRatio: Double) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        let type = variable ? BackdropBlur.variableType : BackdropBlur.gaussianType
+        if abs(topRadius - lastRadius) > 0.01 {
+            lastRadius = topRadius
+            layer.setValue(topRadius, forKeyPath: "filters.\(type).inputRadius")
+        }
+        guard variable else { return }
+        let key = Int((hingeRatio * 200).rounded())
+        if key != lastMaskKey {
+            lastMaskKey = key
+            layer.setValue(BackdropBlur.mask(hingeRatio: hingeRatio), forKeyPath: "filters.\(type).inputMaskImage")
+        }
+    }
+
+    /// A one-pixel-wide column, stretched over the screen. Alpha scales the radius per row:
+    /// 1 at the top edge down to `hingeRatio` at the hinge, never 0.
+    private static func mask(hingeRatio: Double) -> CGImage? {
+        let height = maskHeight
+        var pixels = [UInt8](repeating: 0, count: height * 4)
+        for row in 0..<height {
+            // Row 0 is the top of the image.
+            let depth = Double(row) / Double(height - 1)
+            let alpha = BlurProfile.coverage(atDepth: depth, hingeRatio: hingeRatio)
+            pixels[row * 4 + 3] = UInt8((alpha * 255).rounded())
+        }
+        guard let provider = CGDataProvider(data: Data(pixels) as CFData) else { return nil }
+        return CGImage(
+            width: 1, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+    }
+}
+
+/// Top-left origin, so the mask's first row sits at the top edge of the screen.
+private final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
 }

@@ -72,14 +72,37 @@ final class LidBlurCoreTests: XCTestCase {
         }
     }
 
-    func testUnfoldMask() {
-        XCTAssertTrue(UnfoldMask(strength: 1).isFullyBlurred)
-        XCTAssertEqual(UnfoldMask(strength: 1).bottomCoverage, 1)
-        XCTAssertTrue(UnfoldMask(strength: 0).isFullyClear)
-        let half = UnfoldMask(strength: 0.5)
-        XCTAssertGreaterThan(half.clearEdge, 0)
-        XCTAssertLessThan(half.blurEdge, 1)
-        XCTAssertEqual(half.blurEdge - half.clearEdge, UnfoldMask.feather, accuracy: 1e-9)
+    func testBlurProfileNeverSharpWhileFolded() {
+        let open = BlurProfile(fold: 0)
+        XCTAssertEqual(open.topRadius, 0)
+        XCTAssertFalse(open.isVisible)
+
+        let closed = BlurProfile(fold: 1)
+        XCTAssertEqual(closed.topRadius, BlurProfile.maxRadius)
+        XCTAssertEqual(closed.hingeRatio, 1)
+
+        var previous = Double.infinity
+        for step in stride(from: 1.0, to: 0.0, by: -0.05) {
+            let p = BlurProfile(fold: step)
+            XCTAssertGreaterThan(p.hingeRadius, 0, "hinge must stay blurred at fold \(step)")
+            XCTAssertGreaterThanOrEqual(p.hingeRatio, BlurProfile.hingeFloor)
+            XCTAssertLessThanOrEqual(p.hingeRadius, p.topRadius)
+            XCTAssertLessThanOrEqual(p.topRadius, previous + 1e-9, "radius eases down as the lid opens")
+            previous = p.topRadius
+        }
+    }
+
+    func testBlurProfileUniform() {
+        XCTAssertEqual(BlurProfile(fold: 0.3, gradient: false).hingeRatio, 1)
+        XCTAssertEqual(BlurProfile(fold: 1, scale: 0.5).topRadius, BlurProfile.maxRadius / 2, accuracy: 1e-9)
+    }
+
+    func testCoverageGradient() {
+        XCTAssertEqual(BlurProfile.coverage(atDepth: 0, hingeRatio: 0.4), 1)
+        XCTAssertEqual(BlurProfile.coverage(atDepth: 1, hingeRatio: 0.4), 0.4, accuracy: 1e-9)
+        XCTAssertEqual(BlurProfile.coverage(atDepth: 0.7, hingeRatio: 1), 1)
+        XCTAssertLessThan(BlurProfile.coverage(atDepth: 0.6, hingeRatio: 0.4),
+                          BlurProfile.coverage(atDepth: 0.4, hingeRatio: 0.4))
     }
 
     func testFoldLook() {

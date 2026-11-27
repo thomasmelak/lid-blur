@@ -6,7 +6,7 @@ enum BlurStyle: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .unfold: return "Unfold (clears from the bottom)"
+        case .unfold: return "Gradient (softer at the hinge)"
         case .uniform: return "Uniform"
         }
     }
@@ -19,10 +19,11 @@ enum Intensity: String, CaseIterable {
 
     var title: String { rawValue.capitalized }
 
-    var maxOpacity: Double {
+    /// Multiplier for the blur radius.
+    var radiusScale: Double {
         switch self {
-        case .subtle: return 0.6
-        case .normal: return 0.85
+        case .subtle: return 0.55
+        case .normal: return 0.8
         case .strong: return 1.0
         }
     }
