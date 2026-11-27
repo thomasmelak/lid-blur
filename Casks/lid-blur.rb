@@ -7,14 +7,17 @@ cask "lid-blur" do
   desc "Blurs the screen as the MacBook lid opens and closes"
   homepage "https://github.com/thomasmelak/lid-blur"
 
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
 
   app "Lid Blur.app"
 
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-dr", "com.apple.quarantine", "#{appdir}/Lid Blur.app"]
-    system_command "/usr/bin/open", args: ["#{appdir}/Lid Blur.app"]
+  postflight_steps do
+    run "/usr/bin/xattr",
+        args:         ["-dr", "com.apple.quarantine", "{{appdir}}/Lid Blur.app"],
+        must_succeed: false
+    run "/usr/bin/open",
+        args:         ["{{appdir}}/Lid Blur.app"],
+        must_succeed: false
   end
 
   caveats <<~EOS

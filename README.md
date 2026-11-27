@@ -25,8 +25,12 @@ first time you open it macOS will refuse; go to System Settings > Privacy & Secu
 
 ```sh
 brew tap thomasmelak/lid-blur https://github.com/thomasmelak/lid-blur
+brew trust thomasmelak/lid-blur
 brew install --cask lid-blur
 ```
+
+Current Homebrew refuses casks from a tap you haven't trusted, hence `brew trust`; older
+versions don't have the command and can skip that line.
 
 Homebrew clears the quarantine flag for you, so the app opens straight away. Update with
 `brew upgrade --cask --greedy lid-blur`.
