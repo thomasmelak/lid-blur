@@ -297,14 +297,15 @@
     <div class="panel" role="tabpanel" id="p-brew" aria-labelledby="t-brew">
       <ol class="steps">
         <li>
-          <p>Add the tap and install the cask:</p>
+          <p>Add the tap, trust it, and install the cask:</p>
           <div class="code"><pre><span class="p">$ </span>brew tap thomasmelak/lid-blur https://github.com/thomasmelak/lid-blur
+<span class="p">$ </span>brew trust thomasmelak/lid-blur
 <span class="p">$ </span>brew install --cask lid-blur</pre><button class="copy">Copy</button></div>
         </li>
-        <li><p>Homebrew clears the quarantine flag and opens the app for you, so there's no security prompt.</p></li>
+        <li><p>Current Homebrew refuses casks from a tap you haven't trusted, hence <code class="inline">brew trust</code>. If your Homebrew says the command doesn't exist, it's older and you can skip that line. Homebrew clears the quarantine flag and opens the app for you, so there's no security prompt.</p></li>
         <li>
           <p>To update later:</p>
-          <div class="code"><pre><span class="p">$ </span>brew upgrade --cask --greedy lid-blur</pre><button class="copy">Copy</button></div>
+          <div class="code"><pre><span class="p">$ </span>brew upgrade --cask lid-blur</pre><button class="copy">Copy</button></div>
         </li>
       </ol>
     </div>

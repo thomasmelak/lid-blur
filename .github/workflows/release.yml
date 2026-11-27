@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   release:
@@ -41,3 +42,33 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "Lid Blur $TAG" \
             --generate-notes
+
+      # Point the cask at this release so `brew upgrade` picks it up. main only
+      # takes changes through pull requests, so open one with the bump.
+      - name: Open cask bump PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          OWNER_ID: ${{ github.repository_owner_id }}
+        run: |
+          VERSION="${TAG#v}"
+          SHA="$(shasum -a 256 build/LidBlur.zip | cut -d' ' -f1)"
+          BRANCH="cask/lid-blur-$VERSION"
+          git fetch --depth 1 origin main
+          git checkout -B "$BRANCH" FETCH_HEAD
+          sed -i '' -E \
+            -e "s/^  version \".*\"/  version \"$VERSION\"/" \
+            -e "s/^  sha256 \".*\"/  sha256 \"$SHA\"/" \
+            -e "s#releases/download/[^/]+/#releases/download/$TAG/#" \
+            Casks/lid-blur.rb
+          if git diff --quiet; then
+            echo "Cask already at $VERSION"
+            exit 0
+          fi
+          git config user.name "$OWNER"
+          git config user.email "${OWNER_ID}+${OWNER}@users.noreply.github.com"
+          git commit -am "Update cask to $VERSION"
+          git push --force origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "Update cask to $VERSION" \
+            --body "Points Casks/lid-blur.rb at the $TAG release (sha256 $SHA) so \`brew upgrade\` offers it."
