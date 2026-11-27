@@ -33,7 +33,7 @@ Current Homebrew refuses casks from a tap you haven't trusted, hence `brew trust
 versions don't have the command and can skip that line.
 
 Homebrew clears the quarantine flag for you, so the app opens straight away. Update with
-`brew upgrade --cask --greedy lid-blur`.
+`brew upgrade --cask lid-blur`.
 
 **One-line installer**
 
@@ -104,5 +104,6 @@ Any of these removes the app, its login item and its settings:
 
 Push a tag like `v0.1.0`, or run the **Release** workflow from the Actions tab with a tag name.
 It runs the tests, builds a universal, ad-hoc signed app, and publishes `LidBlur.zip` and
-`LidBlur.dmg` to a GitHub release. The Homebrew cask, the one-line installer and the download
-link above always point at the latest release, so nothing else needs updating.
+`LidBlur.dmg` to a GitHub release. The one-line installer and the download link always point
+at the latest release. The workflow also opens a pull request that bumps the version and
+sha256 in `Casks/lid-blur.rb`; merge it and `brew upgrade` offers the new version.

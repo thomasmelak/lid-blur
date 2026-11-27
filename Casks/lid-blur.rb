@@ -1,11 +1,16 @@
 cask "lid-blur" do
-  version :latest
-  sha256 :no_check
+  version "0.2.0"
+  sha256 "bda5205bee433e65dafefc1697753eac74e3ca632cfdb87a2efa82d54d01046f"
 
-  url "https://github.com/thomasmelak/lid-blur/releases/latest/download/LidBlur.zip"
+  url "https://github.com/thomasmelak/lid-blur/releases/download/0.2.0/LidBlur.zip"
   name "Lid Blur"
   desc "Blurs the screen as the MacBook lid opens and closes"
   homepage "https://github.com/thomasmelak/lid-blur"
+
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
 
   depends_on macos: :ventura
 
