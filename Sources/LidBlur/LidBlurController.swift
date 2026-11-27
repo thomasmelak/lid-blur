@@ -11,6 +11,7 @@ final class LidBlurController: NSObject {
     private let overlay = BlurOverlay()
     private var sensor: LidAngleSensor?
     private var curve = BlurCurve()
+    private var latch = OpenLatch()
     private var follower = EasedFollower(value: 0)
 
     private(set) var currentAngle: Double?
@@ -139,7 +140,7 @@ final class LidBlurController: NSObject {
         readFailures = 0
         if currentAngle.map({ abs($0 - angle) >= 1 }) ?? true { lastAngleChange = now }
         currentAngle = angle
-        target = curve.strength(forAngle: angle)
+        target = latch.strength(forAngle: angle, curve: curve)
     }
 
     private func pollClamshell(now: CFTimeInterval) {

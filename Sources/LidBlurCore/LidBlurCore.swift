@@ -19,6 +19,27 @@ public struct BlurCurve: Equatable, Sendable {
     }
 }
 
+/// Keeps an open screen sharp against small wobbles of the lid (or sensor noise) near the clear
+/// angle. Once the lid has reached the clear angle, the blur only comes back after it has closed
+/// `deadband` degrees below it; it is released again as soon as the lid is back at the clear angle.
+public struct OpenLatch: Equatable, Sendable {
+    public var deadband: Double
+    public private(set) var isOpen = false
+
+    public init(deadband: Double = 8) {
+        self.deadband = deadband
+    }
+
+    public mutating func strength(forAngle angle: Double, curve: BlurCurve) -> Double {
+        if angle >= curve.clearAngle {
+            isOpen = true
+        } else if angle < curve.clearAngle - deadband {
+            isOpen = false
+        }
+        return isOpen ? 0 : curve.strength(forAngle: angle)
+    }
+}
+
 /// A critically damped spring that follows a moving target. It eases in and out of every
 /// change, keeps its velocity when the target moves again, and never overshoots. A slow lid
 /// is tracked closely; a lid flung open still glides into sharpness instead of snapping.

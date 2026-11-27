@@ -24,6 +24,12 @@ final class BlurOverlay: NSObject {
     private var tintView: NSView?
     private var stageView: NSView?
     private var stage: CALayer?
+    /// Holds the perspective. A plain layer with a centred anchor, so the vanishing point is the
+    /// middle of the screen regardless of how AppKit anchors the view's own layer.
+    private var pivot: CALayer?
+    /// Darkens the blurred backdrop around the receding picture.
+    private var surround: CALayer?
+    private var featherMask: CALayer?
     private var mirrorBlur: BlurFilter?
     private let mirror = ScreenMirror()
     private var displayID: CGDirectDisplayID = 0
@@ -84,23 +90,35 @@ final class BlurOverlay: NSObject {
             return
         }
 
+        guard let pivot, let surround, let featherMask else { return }
         let look = DepthLook(fold: fold)
         let size = stage.bounds.size
+        let bounds = CGRect(origin: .zero, size: size)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        // Eye distance a little over twice the screen height: a clear but gentle perspective.
+        surround.frame = bounds
+        // How far back the picture sits, 0...1; the surround darkens with it.
+        let depth = (1 - look.scale) / (1 - DepthLook.minScale)
+        surround.opacity = Float(0.45 * depth)
+
+        pivot.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        pivot.bounds = bounds
+        pivot.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        // Eye distance a little over twice the screen height: a clear but gentle perspective,
+        // centred horizontally so both sides recede equally.
         var perspective = CATransform3DIdentity
         perspective.m34 = -1 / (2.2 * max(size.height, 1))
-        stage.sublayerTransform = perspective
+        pivot.sublayerTransform = perspective
 
         let layer = mirror.layer
         layer.anchorPoint = CGPoint(x: 0.5, y: 0)
-        layer.bounds = CGRect(origin: .zero, size: size)
+        layer.bounds = bounds
         layer.position = CGPoint(x: size.width / 2, y: 0)
         var transform = CATransform3DMakeScale(CGFloat(look.scale), CGFloat(look.scale), 1)
         // Negative angle: the top edge leans away from the viewer, pivoting on the hinge.
         transform = CATransform3DRotate(transform, -CGFloat(look.tilt * .pi / 180), 1, 0, 0)
         layer.transform = transform
+        featherMask.frame = bounds
         CATransaction.commit()
 
         mirrorBlur.update(topRadius: profile.topRadius, hingeRatio: profile.hingeRatio)
@@ -127,6 +145,9 @@ final class BlurOverlay: NSObject {
         tintView = nil
         stageView = nil
         stage = nil
+        pivot = nil
+        surround = nil
+        featherMask = nil
         mirrorBlur = nil
     }
 
@@ -185,13 +206,37 @@ final class BlurOverlay: NSObject {
         }
 
         // The stage holds the captured screen; black shows around it once it moves back.
+        // The stage holds the captured screen over the (flat) backdrop blur. It has no background:
+        // around the receding picture you see the same blur, darkened, and the picture's edges
+        // are feathered into it, so there is no visible frame.
         let stage = CALayer()
         stage.frame = bounds
-        stage.backgroundColor = NSColor.black.cgColor
         stage.masksToBounds = true
-        stage.actions = ["sublayerTransform": NSNull(), "bounds": NSNull(), "position": NSNull()]
+        let noActions: [String: CAAction] = [
+            "sublayerTransform": NSNull(), "bounds": NSNull(), "position": NSNull(),
+            "opacity": NSNull(), "anchorPoint": NSNull(), "transform": NSNull(),
+        ]
+        stage.actions = noActions
+
+        let surround = CALayer()
+        surround.backgroundColor = NSColor.black.cgColor
+        surround.frame = bounds
+        surround.opacity = 0
+        surround.actions = noActions
+        stage.addSublayer(surround)
+
+        let pivot = CALayer()
+        pivot.actions = noActions
+        pivot.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        pivot.frame = bounds
+        stage.addSublayer(pivot)
+
         mirror.layer.removeFromSuperlayer()
-        stage.addSublayer(mirror.layer)
+        pivot.addSublayer(mirror.layer)
+        let feather = BlurOverlay.featherMaskLayer()
+        feather.actions = noActions
+        feather.frame = bounds
+        mirror.layer.mask = feather
         let stageView = NSView(frame: bounds)
         stageView.autoresizingMask = [.width, .height]
         stageView.layer = stage
@@ -212,7 +257,42 @@ final class BlurOverlay: NSObject {
         self.tintView = tint
         self.stageView = stageView
         self.stage = stage
+        self.pivot = pivot
+        self.surround = surround
+        self.featherMask = feather
         return window
+    }
+
+    /// Feather width of the picture's edges, in points.
+    private static let featherWidth = 80
+
+    /// An alpha mask that is opaque in the middle and fades to transparent over `featherWidth`
+    /// at every edge, with smoothly rounded corners. Its centre pixel is stretched over the
+    /// layer, so the fade keeps the same width at any size.
+    private static func featherMaskLayer() -> CALayer {
+        let f = featherWidth
+        let side = 2 * f + 1
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        for y in 0..<side {
+            for x in 0..<side {
+                let dx = Double(min(x, side - 1 - x)) / Double(f)
+                let dy = Double(min(y, side - 1 - y)) / Double(f)
+                let alpha = Easing.smoothstep(dx) * Easing.smoothstep(dy)
+                pixels[(y * side + x) * 4 + 3] = UInt8((alpha * 255).rounded())
+            }
+        }
+        let layer = CALayer()
+        if let provider = CGDataProvider(data: Data(pixels) as CFData) {
+            layer.contents = CGImage(
+                width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: side * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        }
+        layer.contentsScale = 1
+        let c = CGFloat(f) / CGFloat(side)
+        layer.contentsCenter = CGRect(x: c, y: c, width: 1 / CGFloat(side), height: 1 / CGFloat(side))
+        return layer
     }
 }
 

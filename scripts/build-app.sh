@@ -2,6 +2,9 @@
 # Builds "Lid Blur.app" and build/LidBlur.zip.
 #   UNIVERSAL=1   build for both Apple silicon and Intel (needs full Xcode)
 #   VERSION=x.y.z override the version in the VERSION file
+#   SIGN_IDENTITY  code signing identity (name or SHA-1). Defaults to ad hoc ("-").
+#                  A stable identity keeps privacy permissions (Screen Recording)
+#                  across builds; see scripts/make-signing-cert.sh.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -40,8 +43,14 @@ done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$ICONSET"
 
-echo "==> Signing (ad hoc)"
-codesign --force --deep --sign - "$APP"
+SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+if [ "$SIGN_IDENTITY" = "-" ]; then
+    echo "==> Signing (ad hoc)"
+else
+    echo "==> Signing with $SIGN_IDENTITY"
+fi
+codesign --force --deep --options runtime --timestamp=none \
+    --identifier com.thomasmelak.LidBlur --sign "$SIGN_IDENTITY" "$APP"
 
 echo "==> Zipping"
 rm -f "$BUILD_DIR/LidBlur.zip"

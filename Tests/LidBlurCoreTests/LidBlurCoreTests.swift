@@ -133,4 +133,18 @@ final class LidBlurCoreTests: XCTestCase {
             previous = d
         }
     }
+
+    func testOpenLatchIgnoresWobbleNearClearAngle() {
+        let curve = BlurCurve(closedAngle: 10, clearAngle: 80)
+        var latch = OpenLatch(deadband: 8)
+        XCTAssertGreaterThan(latch.strength(forAngle: 60, curve: curve), 0)
+        XCTAssertEqual(latch.strength(forAngle: 80, curve: curve), 0)
+        // Touching the open lid: small dips stay sharp.
+        for angle in [79.0, 76, 73, 78, 81] {
+            XCTAssertEqual(latch.strength(forAngle: angle, curve: curve), 0, "angle \(angle)")
+        }
+        // Really closing it brings the blur back, and it follows the curve from there.
+        XCTAssertEqual(latch.strength(forAngle: 70, curve: curve), curve.strength(forAngle: 70))
+        XCTAssertGreaterThan(latch.strength(forAngle: 76, curve: curve), 0)
+    }
 }
