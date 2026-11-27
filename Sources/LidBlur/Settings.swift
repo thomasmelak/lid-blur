@@ -6,7 +6,7 @@ enum BlurStyle: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .unfold: return "Unfold (clears from the bottom)"
+        case .unfold: return "Gradient (softer at the hinge)"
         case .uniform: return "Uniform"
         }
     }
@@ -19,10 +19,11 @@ enum Intensity: String, CaseIterable {
 
     var title: String { rawValue.capitalized }
 
-    var maxOpacity: Double {
+    /// Multiplier for the blur radius.
+    var radiusScale: Double {
         switch self {
-        case .subtle: return 0.6
-        case .normal: return 0.85
+        case .subtle: return 0.55
+        case .normal: return 0.8
         case .strong: return 1.0
         }
     }
@@ -54,6 +55,17 @@ final class Settings {
     var clearAngle: Double {
         get { defaults.object(forKey: "clearAngle") as? Double ?? 80 }
         set { defaults.set(newValue, forKey: "clearAngle") }
+    }
+
+    /// Redraw the screen with depth (scaled and tilted back) while folded. Needs Screen Recording.
+    var depth: Bool {
+        get { defaults.object(forKey: "depth") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "depth") }
+    }
+
+    var hasRequestedCapture: Bool {
+        get { defaults.bool(forKey: "hasRequestedCapture") }
+        set { defaults.set(newValue, forKey: "hasRequestedCapture") }
     }
 
     var hasLaunchedBefore: Bool {

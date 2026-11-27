@@ -15,6 +15,7 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("IOKit"),
+                .linkedFramework("ScreenCaptureKit"),
             ]
         ),
         .testTarget(name: "LidBlurCoreTests", dependencies: ["LidBlurCore"]),

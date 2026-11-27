@@ -18,6 +18,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         setUpStatusItem()
+        if settings.depth, !settings.hasRequestedCapture, !ScreenMirror.hasPermission {
+            settings.hasRequestedCapture = true
+            ScreenMirror.requestPermission()
+        }
         controller.start()
     }
 
@@ -64,6 +68,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             intensityMenu.addItem(entry)
         }
         menu.addItem(submenu("Intensity", intensityMenu))
+
+        let depthTitle = settings.depth && !ScreenMirror.hasPermission
+            ? "3D Depth (allow Screen Recording)" : "3D Depth"
+        menu.addItem(item(depthTitle, #selector(toggleDepth), checked: settings.depth))
 
         if controller.hasSensor {
             let sliderItem = NSMenuItem()
@@ -168,6 +176,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func chooseIntensity(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let intensity = Intensity(rawValue: raw) else { return }
         settings.intensity = intensity
+        controller.preview()
+    }
+
+    @objc private func toggleDepth() {
+        settings.depth.toggle()
+        if settings.depth, !ScreenMirror.hasPermission {
+            settings.hasRequestedCapture = true
+            ScreenMirror.requestPermission()
+        }
         controller.preview()
     }
 
