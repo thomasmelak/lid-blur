@@ -28,9 +28,15 @@ final class BlurOverlay: NSObject {
     private var pivot: CALayer?
     /// Darkens the blurred backdrop around the receding picture.
     private var surround: CALayer?
+    /// The picture's mask: the feathered edge image plus a solid fill whose opacity fades the
+    /// feather out as the picture reaches full size, so no dark vignette is left at the end.
     private var featherMask: CALayer?
+    private var featherFill: CALayer?
     private var mirrorBlur: BlurFilter?
     private let mirror = ScreenMirror()
+
+    /// What the 3D capture is doing, for the menu.
+    var depthStatus: String { mirror.status }
     private var displayID: CGDirectDisplayID = 0
     private var pixelSize = CGSize.zero
 
@@ -93,11 +99,13 @@ final class BlurOverlay: NSObject {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         surround.frame = bounds
-        // How far back the picture sits, 0...1; the surround darkens with it.
+        // The margin around the picture is solid black and unblurred: it fully covers the flat
+        // backdrop blur underneath, so only the picture itself is blurred. The picture is never
+        // dimmed; its edges fade into the black.
+        surround.opacity = 1
+        // How far back the picture sits, 0...1.
         let depth = (1 - look.scale) / (1 - DepthLook.minScale)
-        // Fully black for most of the travel: the dark margin around the picture is what makes it read
-        // as sitting behind the glass. The picture itself is never dimmed.
-        surround.opacity = Float(min(1, 1.6 * depth))
+        featherFill?.opacity = Float(1 - min(1, 4 * depth))
 
         pivot.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         pivot.bounds = bounds
@@ -119,6 +127,7 @@ final class BlurOverlay: NSObject {
         transform = CATransform3DRotate(transform, -CGFloat(look.tilt * .pi / 180), 1, 0, 0)
         layer.transform = transform
         featherMask.frame = bounds
+        for sublayer in featherMask.sublayers ?? [] { sublayer.frame = bounds }
         CATransaction.commit()
 
         mirrorBlur.update(topRadius: profile.topRadius, hingeRatio: profile.hingeRatio)
@@ -147,6 +156,7 @@ final class BlurOverlay: NSObject {
         pivot = nil
         surround = nil
         featherMask = nil
+        featherFill = nil
         mirrorBlur = nil
     }
 
@@ -232,9 +242,19 @@ final class BlurOverlay: NSObject {
 
         mirror.layer.removeFromSuperlayer()
         pivot.addSublayer(mirror.layer)
-        let feather = BlurOverlay.featherMaskLayer()
+        let feather = CALayer()
         feather.actions = noActions
         feather.frame = bounds
+        let featherEdges = BlurOverlay.featherMaskLayer()
+        featherEdges.actions = noActions
+        featherEdges.frame = bounds
+        feather.addSublayer(featherEdges)
+        let featherFill = CALayer()
+        featherFill.backgroundColor = NSColor.black.cgColor
+        featherFill.actions = noActions
+        featherFill.frame = bounds
+        featherFill.opacity = 0
+        feather.addSublayer(featherFill)
         mirror.layer.mask = feather
         let stageView = NSView(frame: bounds)
         stageView.autoresizingMask = [.width, .height]
@@ -252,6 +272,7 @@ final class BlurOverlay: NSObject {
         self.pivot = pivot
         self.surround = surround
         self.featherMask = feather
+        self.featherFill = featherFill
         return window
     }
 

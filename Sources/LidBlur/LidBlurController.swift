@@ -29,6 +29,7 @@ final class LidBlurController: NSObject {
     private var lastClamshellCheck = -Double.infinity
 
     var hasSensor: Bool { sensor != nil }
+    var depthStatus: String { overlay.depthStatus }
 
     func start() {
         sensor = LidAngleSensor()
