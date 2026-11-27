@@ -59,6 +59,7 @@ Lid Blur lives in the menu bar (the laptop icon). From there you can:
 | Preview Animation | Plays the blur so you can try settings without moving the lid |
 | Style | **Gradient** blurs the whole screen, softer towards the hinge; **Uniform** blurs evenly |
 | Intensity | Subtle, Normal or Strong |
+| 3D Depth | The picture sits behind the glass, smaller and tilted back, and rises forward as the lid opens. Uses Screen Recording to redraw the screen; without it the blur still works, flat |
 | Fully sharp from … | Slider for the lid angle at which the screen is fully sharp, 30° to 130° (sensor Macs only) |
 | Use Current Lid Angle | Sets that angle to wherever your lid is right now |
 | Launch at Login | Starts Lid Blur when you log in (on by default) |

@@ -57,6 +57,17 @@ final class Settings {
         set { defaults.set(newValue, forKey: "clearAngle") }
     }
 
+    /// Redraw the screen with depth (scaled and tilted back) while folded. Needs Screen Recording.
+    var depth: Bool {
+        get { defaults.object(forKey: "depth") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "depth") }
+    }
+
+    var hasRequestedCapture: Bool {
+        get { defaults.bool(forKey: "hasRequestedCapture") }
+        set { defaults.set(newValue, forKey: "hasRequestedCapture") }
+    }
+
     var hasLaunchedBefore: Bool {
         get { defaults.bool(forKey: "hasLaunchedBefore") }
         set { defaults.set(newValue, forKey: "hasLaunchedBefore") }

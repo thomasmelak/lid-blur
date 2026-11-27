@@ -144,3 +144,25 @@ public struct BlurProfile: Equatable, Sendable {
         1 - (1 - Easing.clamp(hingeRatio)) * Easing.smoothstep(depth)
     }
 }
+
+/// How far the picture sits "behind" the glass for a given fold amount. Closed, the picture
+/// is smaller and tilted back from the hinge, as if it were deeper than the display; as the lid
+/// opens it rises forward and upright until it fills the screen.
+public struct DepthLook: Equatable, Sendable {
+    /// Uniform scale of the picture, `minScale`...1.
+    public let scale: Double
+    /// Backward tilt around the hinge, in degrees (0 = upright).
+    public let tilt: Double
+
+    public static let minScale = 0.86
+    public static let maxTilt = 14.0
+
+    public init(fold: Double) {
+        // Eased on both ends: the picture leaves the glass gently, travels, and settles softly.
+        let d = Easing.easeInOutCubic(Easing.clamp(fold))
+        scale = 1 - (1 - DepthLook.minScale) * d
+        tilt = DepthLook.maxTilt * d
+    }
+
+    public var isFlat: Bool { scale >= 0.9995 && tilt <= 0.01 }
+}

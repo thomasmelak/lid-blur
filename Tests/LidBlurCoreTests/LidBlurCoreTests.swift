@@ -120,4 +120,17 @@ final class LidBlurCoreTests: XCTestCase {
         XCTAssertGreaterThan(late.dim, 0.5)
         XCTAssertLessThan(late.dim, 1)
     }
+
+    func testDepthLook() {
+        XCTAssertTrue(DepthLook(fold: 0).isFlat)
+        XCTAssertEqual(DepthLook(fold: 1).scale, DepthLook.minScale, accuracy: 1e-9)
+        XCTAssertEqual(DepthLook(fold: 1).tilt, DepthLook.maxTilt, accuracy: 1e-9)
+        var previous = DepthLook(fold: 1)
+        for step in stride(from: 0.95, through: 0.0, by: -0.05) {
+            let d = DepthLook(fold: step)
+            XCTAssertGreaterThanOrEqual(d.scale, previous.scale, "comes forward as the lid opens")
+            XCTAssertLessThanOrEqual(d.tilt, previous.tilt, "stands upright as the lid opens")
+            previous = d
+        }
+    }
 }

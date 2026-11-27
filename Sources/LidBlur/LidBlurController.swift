@@ -120,7 +120,8 @@ final class LidBlurController: NSObject {
     }
 
     private func render() {
-        overlay.apply(fold: follower.value, style: settings.style, radiusScale: settings.intensity.radiusScale)
+        overlay.apply(fold: follower.value, style: settings.style, radiusScale: settings.intensity.radiusScale,
+                      depth: settings.depth)
     }
 
     private func readSensor(now: CFTimeInterval) {

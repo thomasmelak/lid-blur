@@ -10,6 +10,10 @@ import QuartzCore
 /// Opening the lid lowers the radius everywhere at once until the screen is sharp. There is no
 /// material tint; the screen only darkens towards black near closed.
 ///
+/// With 3D depth on (and Screen Recording allowed), a live capture of the screen is drawn on
+/// top instead, carrying the same blur but scaled down and tilted back from the hinge, so the
+/// picture seems to sit behind the glass and rise forward as the lid opens.
+///
 /// If the backdrop classes are unavailable, it falls back to an even blur, and as a last resort
 /// to a standard visual-effect view without any mask.
 @MainActor
@@ -18,6 +22,12 @@ final class BlurOverlay: NSObject {
     private var backdrop: BackdropBlur?
     private var fallbackView: NSVisualEffectView?
     private var tintView: NSView?
+    private var stageView: NSView?
+    private var stage: CALayer?
+    private var mirrorBlur: BlurFilter?
+    private let mirror = ScreenMirror()
+    private var displayID: CGDirectDisplayID = 0
+    private var pixelSize = CGSize.zero
 
     /// How dark the screen gets when the lid is closed, on top of the blur.
     private let maxTint = 0.9
@@ -30,7 +40,7 @@ final class BlurOverlay: NSObject {
     }
 
     /// `fold` is 0 with the lid open and 1 with it closed.
-    func apply(fold: Double, style: BlurStyle, radiusScale: Double) {
+    func apply(fold: Double, style: BlurStyle, radiusScale: Double, depth: Bool) {
         let profile = BlurProfile(fold: fold, gradient: style == .unfold, scale: radiusScale)
         guard profile.isVisible else {
             hide()
@@ -48,19 +58,76 @@ final class BlurOverlay: NSObject {
         tintView.alphaValue = CGFloat(profile.dim * maxTint)
 
         if !window.isVisible { window.orderFrontRegardless() }
+
+        applyDepth(fold: fold, profile: profile, enabled: depth)
     }
 
     func hide() {
         window?.orderOut(nil)
+        mirror.stop()
+        stageView?.isHidden = true
+    }
+
+    /// With depth on, the screen is redrawn from a live capture, scaled down and tilted back
+    /// around the hinge, so the picture appears to sit behind the glass and rise forward as the
+    /// lid opens. The capture carries the same variable blur. Until the first frame arrives (or
+    /// without Screen Recording access) the plain backdrop blur underneath shows instead.
+    private func applyDepth(fold: Double, profile: BlurProfile, enabled: Bool) {
+        guard enabled, ScreenMirror.hasPermission, let stage, let stageView, let mirrorBlur else {
+            mirror.stop()
+            stageView?.isHidden = true
+            return
+        }
+        mirror.start(displayID: displayID, pixelSize: pixelSize)
+        guard mirror.hasFrame else {
+            stageView.isHidden = true
+            return
+        }
+
+        let look = DepthLook(fold: fold)
+        let size = stage.bounds.size
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        // Eye distance a little over twice the screen height: a clear but gentle perspective.
+        var perspective = CATransform3DIdentity
+        perspective.m34 = -1 / (2.2 * max(size.height, 1))
+        stage.sublayerTransform = perspective
+
+        let layer = mirror.layer
+        layer.anchorPoint = CGPoint(x: 0.5, y: 0)
+        layer.bounds = CGRect(origin: .zero, size: size)
+        layer.position = CGPoint(x: size.width / 2, y: 0)
+        var transform = CATransform3DMakeScale(CGFloat(look.scale), CGFloat(look.scale), 1)
+        // Negative angle: the top edge leans away from the viewer, pivoting on the hinge.
+        transform = CATransform3DRotate(transform, -CGFloat(look.tilt * .pi / 180), 1, 0, 0)
+        layer.transform = transform
+        CATransaction.commit()
+
+        mirrorBlur.update(topRadius: profile.topRadius, hingeRatio: profile.hingeRatio)
+        window?.alphaValue = 1
+        if stageView.isHidden {
+            // Cross-fade from the plain blur to the captured picture as the first frame lands.
+            stageView.isHidden = false
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0
+            fade.toValue = 1
+            fade.duration = 0.25
+            stage.add(fade, forKey: "appear")
+        }
     }
 
     @objc private func screensChanged() {
         // Rebuilt on the next frame for whatever the built-in display looks like now.
         window?.orderOut(nil)
+        mirror.stop()
+        mirror.layer.removeFromSuperlayer()
         window = nil
         backdrop = nil
         fallbackView = nil
         tintView = nil
+        stageView = nil
+        stage = nil
+        mirrorBlur = nil
     }
 
     private func builtInScreen() -> NSScreen? {
@@ -78,6 +145,11 @@ final class BlurOverlay: NSObject {
             hide()
             return nil
         }
+        if let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
+            displayID = CGDirectDisplayID(number.uint32Value)
+        }
+        pixelSize = CGSize(width: screen.frame.width * screen.backingScaleFactor,
+                           height: screen.frame.height * screen.backingScaleFactor)
         if let window {
             if window.frame != screen.frame { window.setFrame(screen.frame, display: false) }
             return window
@@ -112,6 +184,22 @@ final class BlurOverlay: NSObject {
             fallbackView = effect
         }
 
+        // The stage holds the captured screen; black shows around it once it moves back.
+        let stage = CALayer()
+        stage.frame = bounds
+        stage.backgroundColor = NSColor.black.cgColor
+        stage.masksToBounds = true
+        stage.actions = ["sublayerTransform": NSNull(), "bounds": NSNull(), "position": NSNull()]
+        mirror.layer.removeFromSuperlayer()
+        stage.addSublayer(mirror.layer)
+        let stageView = NSView(frame: bounds)
+        stageView.autoresizingMask = [.width, .height]
+        stageView.layer = stage
+        stageView.wantsLayer = true
+        stageView.isHidden = true
+        container.addSubview(stageView)
+        mirrorBlur = BlurFilter.attach(to: mirror.layer)
+
         let tint = NSView(frame: bounds)
         tint.autoresizingMask = [.width, .height]
         tint.wantsLayer = true
@@ -122,17 +210,48 @@ final class BlurOverlay: NSObject {
         window.contentView = container
         self.window = window
         self.tintView = tint
+        self.stageView = stageView
+        self.stage = stage
         return window
     }
 }
 
-/// A layer-hosting view whose backdrop layer blurs the content behind the window with a
-/// per-row radius. Uses Core Animation's backdrop layer and filters, the same machinery behind
-/// the system's own blurs, through their Objective-C runtime names.
+/// A layer-hosting view whose backdrop layer blurs the content behind the window. The backdrop
+/// is Core Animation's own machinery behind the system blurs, reached through its runtime name.
 @MainActor
 private final class BackdropBlur {
     let view: NSView
-    private let layer: CALayer
+    private let blur: BlurFilter
+
+    init?(frame: NSRect) {
+        guard let layerClass = NSClassFromString("CABackdropLayer") as? CALayer.Type else { return nil }
+        let layer = layerClass.init()
+        // Sample what the window server draws behind this window, not just our own content.
+        layer.setValue(true, forKey: "windowServerAware")
+        // Blur a half-resolution copy: visually identical at these radii and much cheaper.
+        layer.setValue(0.5, forKey: "scale")
+        layer.frame = CGRect(origin: .zero, size: frame.size)
+        guard let blur = BlurFilter.attach(to: layer) else { return nil }
+        self.blur = blur
+
+        let view = NSView(frame: frame)
+        view.autoresizingMask = [.width, .height]
+        view.layer = layer
+        view.wantsLayer = true
+        self.view = view
+    }
+
+    func update(topRadius: Double, hingeRatio: Double) {
+        blur.update(topRadius: topRadius, hingeRatio: hingeRatio)
+    }
+}
+
+/// A variable blur on a layer: the mask sets the radius per row, so the radius itself is the
+/// gradient. Falls back to an even gaussian blur where the variable filter is unavailable.
+@MainActor
+private final class BlurFilter {
+    private weak var layer: CALayer?
+    private let type: String
     private let variable: Bool
     private var lastRadius = -1.0
     private var lastMaskKey = -1
@@ -141,15 +260,17 @@ private final class BackdropBlur {
     private static let gaussianType = "gaussianBlur"
     private static let maskHeight = 256
 
-    init?(frame: NSRect) {
-        guard let layerClass = NSClassFromString("CABackdropLayer") as? CALayer.Type,
-              let filterClass = NSClassFromString("CAFilter") as? NSObject.Type else {
-            return nil
-        }
+    private init(layer: CALayer, type: String) {
+        self.layer = layer
+        self.type = type
+        variable = type == BlurFilter.variableType
+    }
+
+    static func attach(to layer: CALayer) -> BlurFilter? {
+        guard let filterClass = NSClassFromString("CAFilter") as? NSObject.Type else { return nil }
         let types = (filterClass as AnyObject).perform(NSSelectorFromString("filterTypes"))?
             .takeUnretainedValue() as? [String] ?? []
-        variable = types.contains(BackdropBlur.variableType)
-        let type = variable ? BackdropBlur.variableType : BackdropBlur.gaussianType
+        let type = types.contains(variableType) ? variableType : gaussianType
         guard types.contains(type),
               let filter = (filterClass as AnyObject).perform(NSSelectorFromString("filterWithType:"), with: type)?
                 .takeUnretainedValue() as? NSObject else {
@@ -158,32 +279,19 @@ private final class BackdropBlur {
         filter.setValue(type, forKey: "name")
         filter.setValue(0, forKey: "inputRadius")
         filter.setValue(true, forKey: "inputNormalizeEdges")
-        if variable {
-            filter.setValue(BackdropBlur.mask(hingeRatio: 1), forKey: "inputMaskImage")
+        if type == variableType {
+            filter.setValue(mask(hingeRatio: 1), forKey: "inputMaskImage")
         }
-
-        let layer = layerClass.init()
-        // Sample what the window server draws behind this window, not just our own content.
-        layer.setValue(true, forKey: "windowServerAware")
-        // Blur a half-resolution copy: visually identical at these radii and much cheaper.
-        layer.setValue(0.5, forKey: "scale")
-        layer.frame = CGRect(origin: .zero, size: frame.size)
         layer.filters = [filter]
-        self.layer = layer
-
-        let view = FlippedView(frame: frame)
-        view.autoresizingMask = [.width, .height]
-        view.layer = layer
-        view.wantsLayer = true
-        self.view = view
+        return BlurFilter(layer: layer, type: type)
     }
 
     func update(topRadius: Double, hingeRatio: Double) {
+        guard let layer else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
 
-        let type = variable ? BackdropBlur.variableType : BackdropBlur.gaussianType
         if abs(topRadius - lastRadius) > 0.01 {
             lastRadius = topRadius
             layer.setValue(topRadius, forKeyPath: "filters.\(type).inputRadius")
@@ -192,11 +300,11 @@ private final class BackdropBlur {
         let key = Int((hingeRatio * 200).rounded())
         if key != lastMaskKey {
             lastMaskKey = key
-            layer.setValue(BackdropBlur.mask(hingeRatio: hingeRatio), forKeyPath: "filters.\(type).inputMaskImage")
+            layer.setValue(BlurFilter.mask(hingeRatio: hingeRatio), forKeyPath: "filters.\(type).inputMaskImage")
         }
     }
 
-    /// A one-pixel-wide column, stretched over the screen. Alpha scales the radius per row:
+    /// A one-pixel-wide column, stretched over the layer. Alpha scales the radius per row:
     /// 1 at the top edge down to `hingeRatio` at the hinge, never 0.
     private static func mask(hingeRatio: Double) -> CGImage? {
         let height = maskHeight
@@ -214,9 +322,4 @@ private final class BackdropBlur {
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
             provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
     }
-}
-
-/// Top-left origin, so the mask's first row sits at the top edge of the screen.
-private final class FlippedView: NSView {
-    override var isFlipped: Bool { true }
 }
