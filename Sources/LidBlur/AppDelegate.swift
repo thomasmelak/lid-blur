@@ -19,11 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         setUpStatusItem()
-        // Ask on every launch while 3D Depth is on and access is missing. A new signature (for
-        // example the first build with a stable certificate) needs access granted again.
-        if settings.depth, !ScreenMirror.hasPermission {
-            ScreenMirror.requestPermission()
-        }
+        // Screen Recording is only requested from the menu (3D Depth or Allow Screen Recording),
+        // never at launch, so an app that already has access is not asked again.
         controller.start()
     }
 
