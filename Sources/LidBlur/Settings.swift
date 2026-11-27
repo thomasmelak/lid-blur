@@ -63,11 +63,6 @@ final class Settings {
         set { defaults.set(newValue, forKey: "depth") }
     }
 
-    var hasRequestedCapture: Bool {
-        get { defaults.bool(forKey: "hasRequestedCapture") }
-        set { defaults.set(newValue, forKey: "hasRequestedCapture") }
-    }
-
     var hasLaunchedBefore: Bool {
         get { defaults.bool(forKey: "hasLaunchedBefore") }
         set { defaults.set(newValue, forKey: "hasLaunchedBefore") }

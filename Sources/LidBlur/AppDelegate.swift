@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let controller = LidBlurController()
     private var statusItem: NSStatusItem?
     private let statusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let depthStatusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private var menuTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -18,8 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         setUpStatusItem()
-        if settings.depth, !settings.hasRequestedCapture, !ScreenMirror.hasPermission {
-            settings.hasRequestedCapture = true
+        // Ask on every launch while 3D Depth is on and access is missing. A new signature (for
+        // example the first build with a stable certificate) needs access granted again.
+        if settings.depth, !ScreenMirror.hasPermission {
             ScreenMirror.requestPermission()
         }
         controller.start()
@@ -69,9 +71,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(submenu("Intensity", intensityMenu))
 
-        let depthTitle = settings.depth && !ScreenMirror.hasPermission
-            ? "3D Depth (allow Screen Recording)" : "3D Depth"
-        menu.addItem(item(depthTitle, #selector(toggleDepth), checked: settings.depth))
+        menu.addItem(item("3D Depth", #selector(toggleDepth), checked: settings.depth))
+        if settings.depth {
+            depthStatusLine.isEnabled = false
+            menu.addItem(depthStatusLine)
+            if !ScreenMirror.hasPermission {
+                menu.addItem(item("Allow Screen Recording…", #selector(allowScreenRecording)))
+            }
+        }
 
         if controller.hasSensor {
             let sliderItem = NSMenuItem()
@@ -102,6 +109,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func updateStatusLine() {
+        depthStatusLine.title = ScreenMirror.hasPermission
+            ? "    Capture: \(controller.depthStatus)"
+            : "    Capture: no Screen Recording permission"
         if controller.hasSensor {
             if let angle = controller.currentAngle {
                 statusLine.title = "Lid angle: \(Int(angle.rounded()))°"
@@ -182,10 +192,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func toggleDepth() {
         settings.depth.toggle()
         if settings.depth, !ScreenMirror.hasPermission {
-            settings.hasRequestedCapture = true
             ScreenMirror.requestPermission()
         }
         controller.preview()
+    }
+
+    @objc private func allowScreenRecording() {
+        ScreenMirror.requestPermission()
+        ScreenMirror.openPrivacySettings()
     }
 
     @objc private func angleSliderMoved(_ sender: NSSlider) {
