@@ -262,7 +262,9 @@ final class BlurOverlay: NSObject {
         stageView.wantsLayer = true
         stageView.isHidden = true
         container.addSubview(stageView)
-        mirrorBlur = BlurFilter.attach(to: mirror.layer)
+        // No edge normalisation on the picture: its blurred edge fades towards transparent, so
+        // light does not spill into the black margin.
+        mirrorBlur = BlurFilter.attach(to: mirror.layer, normalizeEdges: false)
 
 
         window.contentView = container
@@ -277,7 +279,7 @@ final class BlurOverlay: NSObject {
     }
 
     /// Feather width of the picture's edges, in points.
-    private static let featherWidth = 48
+    private static let featherWidth = 20
 
     /// An alpha mask that is opaque in the middle and fades to transparent over `featherWidth`
     /// at every edge, with smoothly rounded corners. Its centre pixel is stretched over the
@@ -359,7 +361,7 @@ private final class BlurFilter {
         variable = type == BlurFilter.variableType
     }
 
-    static func attach(to layer: CALayer) -> BlurFilter? {
+    static func attach(to layer: CALayer, normalizeEdges: Bool = true) -> BlurFilter? {
         guard let filterClass = NSClassFromString("CAFilter") as? NSObject.Type else { return nil }
         let types = (filterClass as AnyObject).perform(NSSelectorFromString("filterTypes"))?
             .takeUnretainedValue() as? [String] ?? []
@@ -371,7 +373,7 @@ private final class BlurFilter {
         }
         filter.setValue(type, forKey: "name")
         filter.setValue(0, forKey: "inputRadius")
-        filter.setValue(true, forKey: "inputNormalizeEdges")
+        filter.setValue(normalizeEdges, forKey: "inputNormalizeEdges")
         if type == variableType {
             filter.setValue(mask(hingeRatio: 1), forKey: "inputMaskImage")
         }

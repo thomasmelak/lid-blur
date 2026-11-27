@@ -179,8 +179,9 @@ public struct DepthLook: Equatable, Sendable {
     public static let maxTilt = 20.0
 
     public init(fold: Double) {
-        // Eased on both ends: the picture leaves the glass gently, travels, and settles softly.
-        let d = Easing.easeInOutCubic(Easing.clamp(fold))
+        // Ease-out on the fold: the picture stays well back (a wide dark margin) through most
+        // of the opening and only rises to the glass near the end, settling softly.
+        let d = Easing.easeOutCubic(Easing.clamp(fold))
         scale = 1 - (1 - DepthLook.minScale) * d
         tilt = DepthLook.maxTilt * d
     }
